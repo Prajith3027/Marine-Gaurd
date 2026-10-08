@@ -188,6 +188,7 @@ def test_ai_assisted_verification_and_incident_creation():
             "longitude": 80.3000,
             "description": "Massive crude oil slick and black oil sheen with strong diesel smell spreading fast near Chennai port approaches.",
             "incident_category": "HEAVY_BLACK_OIL",
+            "photo_url": "https://example.com/spill_photo.jpg",
             "reporter_name": "Capt. Sundaram (Tugboat Alpha)",
             "reporter_contact": "+91 98840 11223",
         },

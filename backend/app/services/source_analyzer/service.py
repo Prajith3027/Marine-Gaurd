@@ -15,6 +15,7 @@ from app.models.source_analysis import SourceAnalysis, SourceCandidate, SourceEv
 from app.models.emergency_vessel import EmergencyVessel, VesselPosition
 from app.services.source_analyzer.reverse_drift_engine import ReverseDriftEngine, ReverseDriftResult
 from app.services.source_analyzer.context_data import SHIPPING_LANES, PORT_ANCHORAGES, CONTEXT_VESSEL_DATABASE
+from app.gis.coastal_boundary import snap_to_water, is_land
 from app.schemas.source_analysis import (
     SourceAnalysisResponse,
     SourceCandidateItemSchema,
@@ -77,7 +78,14 @@ class SourceAnalyzerService:
             .order_by(SourceAnalysis.analyzed_at.desc())
             .first()
         )
-        if existing and not force_recalculate:
+        has_land_crossing = False
+        if existing and existing.reverse_trajectory_json:
+            for p in existing.reverse_trajectory_json:
+                if is_land(float(p.get("latitude", 0)), float(p.get("longitude", 0))):
+                    has_land_crossing = True
+                    break
+
+        if existing and not force_recalculate and not has_land_crossing:
             return self._build_response(existing, incident)
 
         # Retrieve incident parameters
@@ -110,9 +118,9 @@ class SourceAnalyzerService:
             step_6h = steps[min(2, len(steps) - 1)]
             step_18h = steps[min(4, len(steps) - 1)]
             step_24h = steps[-1]
-            step_6h_lat, step_6h_lon = step_6h.latitude, step_6h.longitude
-            step_18h_lat, step_18h_lon = step_18h.latitude, step_18h.longitude
-            step_24h_lat, step_24h_lon = step_24h.latitude, step_24h.longitude
+            step_6h_lat, step_6h_lon = snap_to_water(step_6h.latitude, step_6h.longitude)
+            step_18h_lat, step_18h_lon = snap_to_water(step_18h.latitude, step_18h.longitude)
+            step_24h_lat, step_24h_lon = snap_to_water(step_24h.latitude, step_24h.longitude)
 
         # Match shipping lanes and anchorages along reverse path
         matched_lane = self._find_nearest_shipping_lane(step_6h_lat, step_6h_lon)

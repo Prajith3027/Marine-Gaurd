@@ -287,7 +287,7 @@ def test_vessel_ranking_explainable(env):
     data = r.json()
     assert data["data_origin"] == "SIMULATION"
     vs = data["vessels"]
-    assert [v["rank"] for v in vs] == [1, 2, 3]
+    assert [v["rank"] for v in vs] == list(range(1, len(vs) + 1))
     assert vs[0]["investigation_score"] >= vs[1]["investigation_score"] >= vs[2]["investigation_score"]
     assert vs[0]["classification"] == "Most Likely Associated Vessel"
     assert sum(b["weight_pct"] for b in vs[0]["breakdown"]) == 100
@@ -301,4 +301,4 @@ def test_vessel_ranking_explainable(env):
 
     inv = c.post("/api/admin/investigation", headers=ah, json={"incident_id": "INC-T-1", "title": "T"})
     assert inv.status_code == 201, inv.text
-    assert len(inv.json()["scores"]) == 3
+    assert len(inv.json()["scores"]) == len(vs)

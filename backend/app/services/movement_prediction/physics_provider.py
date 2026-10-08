@@ -13,6 +13,11 @@ from app.services.movement_prediction.base import (
     BaseMovementPredictionProvider,
     PredictionDriftResult,
 )
+from app.gis.coastal_boundary import (
+    validate_and_constrain_step,
+    snap_to_water,
+    is_water,
+)
 
 
 def degrees_to_cardinal(deg: float) -> str:
@@ -88,8 +93,9 @@ class LagrangianPhysicsProvider(BaseMovementPredictionProvider):
             standard_horizons.append(forecast_horizon_hours)
             standard_horizons.sort()
 
+        cur_anchor_lat, cur_anchor_lon = snap_to_water(origin_lat, origin_lon)
         forecast_points = []
-        trajectory_coords = [[round(origin_lon, 5), round(origin_lat, 5)]]
+        trajectory_coords = [[round(cur_anchor_lon, 5), round(cur_anchor_lat, 5)]]
         feature_points = []
 
         # Envelope points for constructing uncertainty corridor polygon
@@ -110,8 +116,20 @@ class LagrangianPhysicsProvider(BaseMovementPredictionProvider):
             d_lat = dy_meters / 111320.0
             d_lon = dx_meters / (111320.0 * cos_lat)
 
-            new_lat = round(origin_lat + d_lat, 5)
-            new_lon = round(origin_lon + d_lon, 5)
+            cand_lat = round(origin_lat + d_lat, 5)
+            cand_lon = round(origin_lon + d_lon, 5)
+
+            # Validate against coastline: ensure step does not cross land
+            prev_lat = forecast_points[-1]["latitude"] if forecast_points else cur_anchor_lat
+            prev_lon = forecast_points[-1]["longitude"] if forecast_points else cur_anchor_lon
+
+            corr_lat, corr_lon, hit = validate_and_constrain_step(
+                (prev_lat, prev_lon),
+                (cand_lat, cand_lon),
+                offshore_margin_deg=0.005,
+            )
+            new_lat = corr_lat
+            new_lon = corr_lon
 
             dist_km = round(math.sqrt(dx_meters**2 + dy_meters**2) / 1000.0, 2)
             bearing = round((math.degrees(math.atan2(dx_meters, dy_meters)) + 360.0) % 360.0, 1)
@@ -155,11 +173,13 @@ class LagrangianPhysicsProvider(BaseMovementPredictionProvider):
             offset_dx = uncertainty_width_m * math.sin(perp_angle)
             offset_dy = uncertainty_width_m * math.cos(perp_angle)
 
-            left_lat = round(new_lat + (offset_dy / 111320.0), 5)
-            left_lon = round(new_lon + (offset_dx / (111320.0 * cos_lat)), 5)
+            raw_left_lat = round(new_lat + (offset_dy / 111320.0), 5)
+            raw_left_lon = round(new_lon + (offset_dx / (111320.0 * cos_lat)), 5)
+            left_lat, left_lon = snap_to_water(raw_left_lat, raw_left_lon, offshore_offset_deg=0.005)
 
-            right_lat = round(new_lat - (offset_dy / 111320.0), 5)
-            right_lon = round(new_lon - (offset_dx / (111320.0 * cos_lat)), 5)
+            raw_right_lat = round(new_lat - (offset_dy / 111320.0), 5)
+            raw_right_lon = round(new_lon - (offset_dx / (111320.0 * cos_lat)), 5)
+            right_lat, right_lon = snap_to_water(raw_right_lat, raw_right_lon, offshore_offset_deg=0.005)
 
             left_envelope.append([left_lon, left_lat])
             right_envelope.append([right_lon, right_lat])

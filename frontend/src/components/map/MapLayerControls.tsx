@@ -29,6 +29,7 @@ export interface LayerVisibility {
   coastalImpact: boolean;
   responseRouting: boolean;
   sourceAnalysis: boolean;
+  marineWaste?: boolean;
 }
 
 interface MapLayerControlsProps {
@@ -142,6 +143,12 @@ export const MapLayerControls: React.FC<MapLayerControlsProps> = ({
       label: "Coastal Perimeter Reference",
       icon: <Globe className="w-4 h-4 text-[#168DCC]" />,
       color: "text-[#168DCC]",
+    },
+    {
+      key: "marineWaste",
+      label: "Marine Waste & Debris (New)",
+      icon: <span className="text-sm">🌊</span>,
+      color: "text-emerald-500",
     },
   ];
 

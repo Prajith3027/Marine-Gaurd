@@ -109,6 +109,11 @@ class CitizenReport(Base):
     video_url = Column(String(512), nullable=True, doc="Optional uploaded video evidence URL")
     public_remarks = Column(Text, nullable=True, doc="Public-safe admin remarks visible to the reporting citizen")
 
+    # Marine Pollution System discriminator (OIL_SPILL | MARINE_WASTE)
+    pollution_type = Column(String(32), nullable=False, default="OIL_SPILL", index=True, doc="OIL_SPILL or MARINE_WASTE")
+    waste_type = Column(String(64), nullable=True, doc="FLOATING_PLASTIC, PLASTIC_BOTTLES, FISHING_NETS, MARINE_DEBRIS, FLOATING_WASTE, OTHER_WASTE")
+    waste_density = Column(String(32), nullable=True, doc="LOW, MODERATE, HIGH, VERY_HIGH")
+
     # Audit & Review Metadata
     reviewed_by = Column(String(128), nullable=True, doc="Command operator or reviewer name")
     reviewed_at = Column(DateTime(timezone=True), nullable=True, doc="Timestamp of commander review")

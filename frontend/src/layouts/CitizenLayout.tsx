@@ -19,9 +19,9 @@ import { CopyrightFooter } from "../components/layout/CopyrightFooter";
 
 const CITIZEN_NAV = [
   { id: "dashboard", label: "Dashboard", path: "/citizen/dashboard", icon: LayoutDashboard },
-  { id: "report", label: "Report Oil Spill", path: "/citizen/report", icon: FilePlus2 },
+  { id: "report", label: "Report Pollution", path: "/citizen/report", icon: FilePlus2 },
   { id: "my-reports", label: "My Reports", path: "/citizen/my-reports", icon: FileText },
-  { id: "map", label: "Spill Map", path: "/citizen/map", icon: MapPin },
+  { id: "map", label: "Pollution Map", path: "/citizen/map", icon: MapPin },
   { id: "alerts", label: "Alerts", path: "/citizen/alerts", icon: Bell },
   { id: "voice", label: "Voice Assistant", path: "/citizen/voice", icon: Mic },
   { id: "profile", label: "Profile", path: "/citizen/profile", icon: User },
@@ -65,7 +65,7 @@ export const CitizenLayout: React.FC = () => {
                 CITIZEN PORTAL
               </p>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                Marine Oil Spill Reporting
+                Marine Pollution Surveillance
               </p>
             </div>
           </div>

@@ -27,8 +27,10 @@ import type {
   SourceAnalysisResponse,
 } from "../../types";
 import type { LayerVisibility } from "./MapLayerControls";
+import type { WasteGISLayers } from "../../services/wasteApi";
 
 interface MapCanvasProps {
+  wasteLayers?: WasteGISLayers | null;
   incidents: MapIncidentPoint[];
   protectedAreas: GISLayerFeature[];
   fishingZones: GISLayerFeature[];
@@ -157,6 +159,7 @@ const createVesselIcon = (vessel: ActiveVesselPoint, isSuspect: boolean, isHighl
 };
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
+  wasteLayers,
   incidents,
   protectedAreas,
   fishingZones,
@@ -1186,6 +1189,105 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           })}
         </React.Fragment>
       )}
+
+      {/* ── Layer: Marine Waste & Debris Incidents ─────────────── */}
+      {visibility.marineWaste && wasteLayers && wasteLayers.incidents.features.map((feat: any) => {
+        const [lng, lat] = feat.geometry.coordinates;
+        const props = feat.properties;
+        const sevColor =
+          props.severity === "CRITICAL" ? "#ef4444" :
+          props.severity === "HIGH" ? "#f97316" :
+          props.severity === "MODERATE" ? "#eab308" : "#10b981";
+
+        const wasteIcon = L.divIcon({
+          className: "marine-waste-marker-pin",
+          html: `
+            <div style="
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              background: #064e3b;
+              border: 2px solid ${sevColor};
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 0 12px ${sevColor}99;
+              cursor: pointer;
+            ">
+              <span style="font-size: 14px;">🌊</span>
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14],
+        });
+
+        return (
+          <Marker key={`waste-${props.id}`} position={[lat, lng]} icon={wasteIcon}>
+            <Popup>
+              <div className="p-2 space-y-2 min-w-[220px]">
+                <div className="flex items-center justify-between gap-1.5 border-b border-ocean-800 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">🌊</span>
+                    <span className="font-bold text-xs text-emerald-300">
+                      {props.incident_code}
+                    </span>
+                  </div>
+                  <span
+                    className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border"
+                    style={{
+                      color: sevColor,
+                      borderColor: `${sevColor}66`,
+                      backgroundColor: `${sevColor}22`,
+                    }}
+                  >
+                    {props.severity}
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-slate-200 font-semibold">
+                  {props.waste_type.replace(/_/g, " ")}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <div className="bg-ocean-900/60 p-1.5 rounded">
+                    <div className="text-[8px] text-slate-400 uppercase">Pollution Score</div>
+                    <div className="font-bold text-emerald-400 font-mono text-xs">
+                      {props.pollution_score}/100
+                    </div>
+                  </div>
+                  <div className="bg-ocean-900/60 p-1.5 rounded">
+                    <div className="text-[8px] text-slate-400 uppercase">Priority</div>
+                    <div className="font-bold text-amber-300 text-xs">
+                      {props.cleanup_priority}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-400 space-y-0.5">
+                  <div>Density: <span className="text-slate-200">{props.density}</span></div>
+                  <div>Status: <span className="text-slate-200 uppercase">{props.status}</span></div>
+                  {props.entanglement_hazard && (
+                    <div className="text-rose-400 font-bold">⚠️ High Entanglement Risk</div>
+                  )}
+                  {props.navigation_hazard && (
+                    <div className="text-amber-400 font-bold">⚓ Navigation Hazard</div>
+                  )}
+                </div>
+
+                <div className="pt-1 border-t border-ocean-800 flex justify-end">
+                  <Link
+                    to="/admin/marine-waste"
+                    className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition"
+                  >
+                    Open in Waste Desk →
+                  </Link>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
 
     </MapContainer>
   );

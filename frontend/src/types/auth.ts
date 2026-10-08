@@ -102,6 +102,14 @@ export interface AdminDashboardSummary {
   candidate_vessels: number;
   high_risk_incidents: number;
   resolved_incidents: number;
+  // Unified Pollution Overview (Phase 6)
+  total_pollution_incidents?: number;
+  oil_spill_incidents?: number;
+  marine_waste_incidents?: number;
+  critical_incidents?: number;
+  high_priority_incidents?: number;
+  pending_actions?: number;
+  resolved_pollution_incidents?: number;
 }
 
 export interface AdminCitizenReport extends CitizenReportItem {

@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import apiService from "../services/api";
+import { isWaterCoordinate } from "../utils/coastal";
 import type {
   SimulationRunItem,
   SimulationRunListItem,
@@ -257,12 +258,20 @@ export default function Simulator() {
     setLat(preset.lat);
     setLon(preset.lon);
     setScenarioNotes(preset.notes);
+    setErrorMessage(null);
   };
 
   // Run Simulation Submission
   const handleRunSimulation = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    // Validate that hypothetical spill origin is strictly in ocean/sea water
+    if (!isWaterCoordinate(Number(lat), Number(lon))) {
+      setErrorMessage("Please select a location in the sea.");
+      return;
+    }
+
     setRunningSim(true);
 
     try {
@@ -577,6 +586,12 @@ export default function Simulator() {
                   />
                 </div>
               </div>
+              {!isWaterCoordinate(lat, lon) && (
+                <div className="mt-1.5 text-[10px] text-[#C6283D] font-mono flex items-center gap-1 bg-red-50 px-2 py-1 rounded border border-red-200">
+                  <AlertTriangle className="w-3 h-3 text-[#C6283D] shrink-0" />
+                  <span>Please select a location in the sea.</span>
+                </div>
+              )}
             </div>
 
             {/* Spill Magnitude & Unit */}
@@ -860,6 +875,11 @@ export default function Simulator() {
                 <MapClickHandler
                   enabled={pickOnMap}
                   onPickLocation={(pickedLat, pickedLon) => {
+                    if (!isWaterCoordinate(pickedLat, pickedLon)) {
+                      setErrorMessage("Please select a location in the sea.");
+                      return;
+                    }
+                    setErrorMessage(null);
                     setLat(pickedLat);
                     setLon(pickedLon);
                     setPickOnMap(false);

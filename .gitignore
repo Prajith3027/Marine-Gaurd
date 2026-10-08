@@ -124,3 +124,7 @@ ehthumbs.db
 Thumbs.db
 
 ml/data/raw/02_Test_images_and_ground_truth.7z
+
+# Runtime uploads
+uploads/
+backend/uploads/

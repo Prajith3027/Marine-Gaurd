@@ -12,6 +12,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { citizenApi } from "../../services/citizenApi";
+import { wasteApi } from "../../services/wasteApi";
 
 export default function CitizenReportPage() {
   const navigate = useNavigate();
@@ -28,6 +29,11 @@ export default function CitizenReportPage() {
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState<"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">("MEDIUM");
   const [incidentCategory, setIncidentCategory] = useState("SURFACE_SHEEN");
+  const [pollutionType, setPollutionType] = useState<"OIL_SPILL" | "MARINE_WASTE">("OIL_SPILL");
+  const [wasteType, setWasteType] = useState("FLOATING_PLASTIC");
+  const [wasteDensity, setWasteDensity] = useState("MODERATE");
+
+  const [wasteResult, setWasteResult] = useState<any | null>(null);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -82,7 +88,6 @@ export default function CitizenReportPage() {
       formData.append("time", time);
       formData.append("description", description);
       formData.append("severity", severity);
-      formData.append("incident_category", incidentCategory);
 
       if (imageFile) {
         formData.append("image", imageFile);
@@ -91,15 +96,163 @@ export default function CitizenReportPage() {
         formData.append("video", videoFile);
       }
 
-      const res = await citizenApi.submitReport(formData);
-      setSuccessCode(res.report_code);
+      if (pollutionType === "MARINE_WASTE") {
+        formData.append("waste_type", wasteType);
+        formData.append("density", wasteDensity);
+        const res = await wasteApi.submitReport(formData);
+        setWasteResult(res);
+        setSuccessCode(res.report_code);
+      } else {
+        formData.append("incident_category", incidentCategory);
+        const res = await citizenApi.submitReport(formData);
+        setWasteResult(null);
+        setSuccessCode(res.report_code);
+      }
     } catch (err: unknown) {
       const errObj = err as { detail?: string; message?: string };
-      setError(errObj.detail || errObj.message || "Failed to submit oil spill report.");
+      setError(errObj.detail || errObj.message || "Failed to submit pollution report.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (successCode && wasteResult) {
+    return (
+      <div className="max-w-2xl mx-auto py-8 px-4 space-y-6 animate-fade-in">
+        {/* Top Header Badge */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-mono font-bold uppercase tracking-wider">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            AI Verified Observation
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-[#17324D] dark:text-white">
+            MARINE WASTE DETECTED
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Automated computer vision and mathematical scoring verified. Operational incident logged.
+          </p>
+        </div>
+
+        {/* Phase 7.6 Citizen Result Card */}
+        <div className="rounded-2xl bg-white dark:bg-[#0c1f33] border border-[#D9E8F2] dark:border-[#1a3854] shadow-xl overflow-hidden">
+          <div className="p-5 sm:p-6 space-y-5">
+            {/* Visual Evidence Image */}
+            {imagePreview && (
+              <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 max-h-56 bg-slate-950 flex items-center justify-center">
+                <img
+                  src={imagePreview}
+                  alt="Marine Debris Evidence"
+                  className="w-full h-full object-cover max-h-56"
+                />
+                <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-md text-[10px] font-mono text-emerald-300 font-bold">
+                  Uploaded Sighting Evidence
+                </div>
+              </div>
+            )}
+
+            {/* Metrics Key-Value Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#122e47] border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 font-semibold block uppercase">Waste Type</span>
+                <span className="font-bold text-[#17324D] dark:text-white mt-0.5 block truncate">
+                  {wasteResult.waste_type?.replace(/_/g, " ") || "Plastic Debris"}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#122e47] border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 font-semibold block uppercase">Est. Quantity</span>
+                <span className="font-bold text-[#17324D] dark:text-white mt-0.5 block">
+                  {wasteResult.estimated_items_count ?? 50} items
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#122e47] border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 font-semibold block uppercase">Density</span>
+                <span className="font-bold text-[#17324D] dark:text-white mt-0.5 block">
+                  {wasteResult.density || "MODERATE"}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#122e47] border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 font-semibold block uppercase">Pollution Score</span>
+                <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block text-sm">
+                  {wasteResult.pollution_score ?? 50} <span className="text-[10px] text-slate-400 font-normal">/ 100</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Risk & Action Panel */}
+            <div className="p-4 rounded-xl bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/20 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Severity:</span>
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-black uppercase ${
+                    wasteResult.severity === "CRITICAL" ? "bg-red-500 text-white" :
+                    wasteResult.severity === "HIGH" ? "bg-amber-500 text-white" :
+                    wasteResult.severity === "MODERATE" ? "bg-blue-500 text-white" : "bg-emerald-500 text-white"
+                  }`}>
+                    {wasteResult.severity || "MODERATE"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Cleanup Priority:</span>
+                  <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-[11px] font-mono font-bold">
+                    {wasteResult.cleanup_priority || "P2 — HIGH"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold">Recommended Action:</span>
+                <span className="font-bold text-[#17324D] dark:text-white">
+                  {wasteResult.recommended_action || "Beach Cleanup Crew"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold">Incident ID:</span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {wasteResult.incident_code || successCode}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="p-4 bg-slate-50 dark:bg-[#081829] border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <button
+              onClick={() => navigate("/map")}
+              className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold transition cursor-pointer"
+            >
+              View on GIS Map
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSuccessCode(null);
+                  setWasteResult(null);
+                  setDescription("");
+                  setImageFile(null);
+                  setImagePreview(null);
+                  setVideoFile(null);
+                }}
+                className="btn-secondary text-xs py-2 px-4 font-semibold"
+              >
+                Submit Another Report
+              </button>
+              <button
+                onClick={() => navigate("/citizen/my-reports")}
+                className="btn-primary text-xs py-2 px-5 font-bold"
+              >
+                My Reports
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (successCode) {
     return (
@@ -161,7 +314,7 @@ export default function CitizenReportPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-[#17324D] dark:text-white flex items-center gap-2">
             <FilePlus2 className="w-6 h-6 text-[#0066b2] dark:text-[#00f3ff]" />
-            <span>Report Marine Oil Spill</span>
+            <span>Report Marine Pollution Incident</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Provide precise coordinates and visual evidence for verified authority investigation.
@@ -173,6 +326,32 @@ export default function CitizenReportPage() {
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Dashboard</span>
+        </button>
+      </div>
+
+      {/* Module Selector Pill */}
+      <div className="flex p-1.5 rounded-2xl bg-slate-100 dark:bg-[#122e47] border border-slate-200 dark:border-slate-700 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setPollutionType("OIL_SPILL")}
+          className={`flex-1 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition ${
+            pollutionType === "OIL_SPILL"
+              ? "bg-white dark:bg-[#004e8c] text-[#004e8c] dark:text-[#00f3ff] shadow-md"
+              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
+        >
+          🛢️ Oil Spill Incident
+        </button>
+        <button
+          type="button"
+          onClick={() => setPollutionType("MARINE_WASTE")}
+          className={`flex-1 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition ${
+            pollutionType === "MARINE_WASTE"
+              ? "bg-emerald-600 text-white shadow-md"
+              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
+        >
+          🌊 Marine Waste &amp; Debris
         </button>
       </div>
 
@@ -294,24 +473,57 @@ export default function CitizenReportPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold mb-1">Incident Category</label>
-              <select
-                value={incidentCategory}
-                onChange={(e) => setIncidentCategory(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-[#F4F9FD] dark:bg-[#071521] border border-[#D9E8F2] dark:border-[#1a3854] text-xs focus:outline-none focus:border-[#0066b2]"
-              >
-                <option value="SURFACE_SHEEN">Surface Hydrocarbon Sheen</option>
-                <option value="TAR_BALLS">Tar Balls / Sticky Residue</option>
-                <option value="HEAVY_BLACK_OIL">Heavy Crude / Black Sludge</option>
-                <option value="VESSEL_DISCHARGE">Vessel Bilge / Ballast Discharge</option>
-                <option value="SHORELINE_COATING">Shoreline / Rock Oiling</option>
-                <option value="OTHER">Other Marine Anomaly</option>
-              </select>
+          {pollutionType === "OIL_SPILL" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1">Incident Category</label>
+                <select
+                  value={incidentCategory}
+                  onChange={(e) => setIncidentCategory(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-[#F4F9FD] dark:bg-[#071521] border border-[#D9E8F2] dark:border-[#1a3854] text-xs focus:outline-none focus:border-[#0066b2]"
+                >
+                  <option value="SURFACE_SHEEN">Surface Hydrocarbon Sheen</option>
+                  <option value="TAR_BALLS">Tar Balls / Sticky Residue</option>
+                  <option value="HEAVY_BLACK_OIL">Heavy Crude / Black Sludge</option>
+                  <option value="VESSEL_DISCHARGE">Vessel Bilge / Ballast Discharge</option>
+                  <option value="SHORELINE_COATING">Shoreline / Rock Oiling</option>
+                  <option value="OTHER">Other Marine Anomaly</option>
+                </select>
+              </div>
+              <div />
             </div>
-            <div />
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1">Waste Category</label>
+                <select
+                  value={wasteType}
+                  onChange={(e) => setWasteType(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-[#F4F9FD] dark:bg-[#071521] border border-emerald-500/30 text-xs font-medium focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="FLOATING_PLASTIC">Floating Plastic (General Packaging / Fragments)</option>
+                  <option value="PLASTIC_BOTTLES">Plastic Bottles &amp; PET Containers</option>
+                  <option value="FISHING_NETS">Fishing Nets / Ghost Gear (Entanglement Risk)</option>
+                  <option value="MARINE_DEBRIS">Marine Debris &amp; Industrial Rubbish</option>
+                  <option value="FLOATING_WASTE">Floating Waste Slick / Urban Runoff</option>
+                  <option value="OTHER_WASTE">Other Solid Marine Waste</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Estimated Debris Density</label>
+                <select
+                  value={wasteDensity}
+                  onChange={(e) => setWasteDensity(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-[#F4F9FD] dark:bg-[#071521] border border-emerald-500/30 text-xs font-medium focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="LOW">LOW — Scattered Items (&lt; 20% surface coverage)</option>
+                  <option value="MODERATE">MODERATE — Moderate Clusters (20% – 50% coverage)</option>
+                  <option value="HIGH">HIGH — Dense Accumulation (50% – 80% coverage)</option>
+                  <option value="VERY_HIGH">VERY HIGH — Solid Mat / High Entanglement Risk (&gt; 80%)</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold mb-1">

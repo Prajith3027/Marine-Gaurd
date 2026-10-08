@@ -74,6 +74,7 @@ from app.models.user import (                                   # noqa: F401
     Investigation,
     VesselScore,
 )
+from app.models.marine_waste import MarineWasteIncident         # noqa: F401
 
 __all__ = [
     "User",
@@ -81,6 +82,7 @@ __all__ = [
     "PublicAlert",
     "Investigation",
     "VesselScore",
+    "MarineWasteIncident",
     "IncidentStatus",
     "IncidentSeverity",
     "ZoneType",

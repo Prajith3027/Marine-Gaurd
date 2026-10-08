@@ -65,11 +65,11 @@ async def lifespan(app: FastAPI):
 # ── Application factory ────────────────────────────────────────────────────
 
 app = FastAPI(
-    title=settings.app_name,
+    title="Marine Pollution Response System API",
     version=settings.app_version,
     description=(
-        "AI-Powered Intelligent Oil Spill Detection, Prioritization & "
-        "Response System — REST API v1"
+        "Integrated Marine Pollution Response System — Dual Operations for "
+        "Intelligent Oil Spill Intelligence and Marine Waste & Debris Command"
     ),
     docs_url="/docs",
     redoc_url="/redoc",
@@ -121,11 +121,13 @@ from app.api.auth_routes import router as auth_router            # noqa: E402
 from app.api.citizen_routes import router as citizen_router, public_router  # noqa: E402
 from app.api.admin_routes import router as admin_router          # noqa: E402
 from app.api.voice_routes import router as voice_router          # noqa: E402
+from app.api.waste_routes import router as waste_router          # noqa: E402
 app.include_router(auth_router, prefix="/api")
 app.include_router(citizen_router, prefix="/api")
 app.include_router(public_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
+app.include_router(waste_router, prefix="/api")
 
 # ── Core endpoints ─────────────────────────────────────────────────────────
 

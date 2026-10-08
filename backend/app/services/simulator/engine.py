@@ -31,6 +31,11 @@ from app.gis.spatial_service import (
     SIMULATION_PORTS,
     SIMULATION_SHIPPING_LANES,
 )
+from app.gis.coastal_boundary import (
+    snap_to_water,
+    validate_and_constrain_step,
+    INDIA_COASTLINE,
+)
 
 # Reference static ecosystem zones for spatial decay evaluation
 SIMULATION_ECOSYSTEM_ZONES = [
@@ -240,12 +245,13 @@ class WhatIfSimulationEngine:
 
         # Hourly waypoints
         waypoints: list[dict[str, Any]] = []
-        cur_lat = lat
-        cur_lon = lon
+        cur_lat, cur_lon = snap_to_water(lat, lon)
         step_hours = 1 if duration <= 36 else (2 if duration <= 72 else 4)
         num_steps = int(duration / step_hours) + 1
 
         total_distance_km = 0.0
+        has_reached_shore = False
+        shoreline_contact_point: tuple[float, float] | None = None
 
         for i in range(num_steps):
             t_hour = i * step_hours
@@ -266,19 +272,38 @@ class WhatIfSimulationEngine:
                 "uncertainty_radius_km": uncertainty_radius_km,
                 "drift_speed_kmh": round(drift_speed_kmh, 2),
                 "distance_from_origin_km": round(total_distance_km, 2),
+                "is_landfall": has_reached_shore,
             })
 
             # Advance coordinates for next step
+            if has_reached_shore:
+                # Once the slick reaches the coastline, it remains at the beached landfall site
+                # rather than continuing through mainland territory.
+                continue
+
             step_disp_m = drift_speed_ms * (step_hours * 3600)
             step_disp_km = (drift_speed_kmh * step_hours)
-            total_distance_km += step_disp_km
 
             delta_lat = (step_disp_m * math.cos(math.radians(drift_heading_deg))) / 111320.0
             avg_lat_rad = math.radians(cur_lat)
             delta_lon = (step_disp_m * math.sin(math.radians(drift_heading_deg))) / (111320.0 * max(0.1, math.cos(avg_lat_rad)))
 
-            cur_lat += delta_lat
-            cur_lon += delta_lon
+            cand_lat = cur_lat + delta_lat
+            cand_lon = cur_lon + delta_lon
+
+            corr_lat, corr_lon, hit_coast = validate_and_constrain_step((cur_lat, cur_lon), (cand_lat, cand_lon))
+
+            if hit_coast:
+                has_reached_shore = True
+                shoreline_contact_point = (corr_lat, corr_lon)
+                step_actual_dist = haversine_km(cur_lat, cur_lon, corr_lat, corr_lon)
+                cur_lat = corr_lat
+                cur_lon = corr_lon
+                total_distance_km += step_actual_dist
+            else:
+                cur_lat = corr_lat
+                cur_lon = corr_lon
+                total_distance_km += step_disp_km
 
         final_area = waypoints[-1]["slick_area_km2"] if waypoints else initial_area_km2
 
@@ -314,20 +339,21 @@ class WhatIfSimulationEngine:
             lon = wp["longitude"]
             hour = wp["hour"]
             radius = wp["uncertainty_radius_km"]
+            is_landfall = wp.get("is_landfall", False)
 
-            # Test distance to reference coastline
-            for c_lat, c_lon in COASTLINE_COORDINATES:
+            # Test distance to coastal boundary
+            for c_lat, c_lon in INDIA_COASTLINE:
                 d = haversine_km(lat, lon, c_lat, c_lon)
                 if d < closest_distance_km:
                     closest_distance_km = d
                     landfall_lat = c_lat
                     landfall_lon = c_lon
 
-                # If the slick envelope reaches within 2.5 km of shore
-                if d <= (radius + 2.5) and earliest_landfall_hour is None:
-                    earliest_landfall_hour = hour
-                    landfall_lat = c_lat
-                    landfall_lon = c_lon
+            # If the slick envelope reaches within 2.5 km of shore or hits coast
+            if (is_landfall or closest_distance_km <= (radius + 2.5)) and earliest_landfall_hour is None:
+                earliest_landfall_hour = hour
+                landfall_lat = lat if is_landfall else landfall_lat
+                landfall_lon = lon if is_landfall else landfall_lon
 
         closest_distance_km = round(closest_distance_km, 2)
         shoreline_impacted = earliest_landfall_hour is not None

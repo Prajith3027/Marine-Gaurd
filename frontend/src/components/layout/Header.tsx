@@ -35,6 +35,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/admin/users":         "User Directory & RBAC Governance",
   "/admin/settings":      "System Diagnostics & AI Pipeline",
   "/admin/voice":         "Multilingual Voice Assistant",
+  "/admin/waste":         "Marine Waste & Debris Command Desk",
+  "/detect-waste":        "AI Marine Waste & Debris Detection",
   "/incidents":           "Incident Operations & Dossier",
   "/detect":              "AI Spill Detection",
   "/detect-spill":        "AI Spill Detection",
@@ -66,7 +68,7 @@ export function Header({ onToggleMobileNav }: HeaderProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const pageTitle = ROUTE_TITLES[location.pathname] ?? "Oil Spill Intelligence";
+  const pageTitle = ROUTE_TITLES[location.pathname] ?? "Marine Pollution Response System";
 
   // State for modals & popovers
   const [showNotifications, setShowNotifications] = useState(false);
@@ -190,7 +192,7 @@ export function Header({ onToggleMobileNav }: HeaderProps) {
               <span>{pageTitle}</span>
             </h1>
             <p className="text-[11px] text-[#5E7183] hidden sm:block font-medium">
-              AI-Powered Maritime Oil Spill Surveillance &amp; Response
+              Autonomous Maritime Oil Spill &amp; Marine Waste Intelligence
             </p>
           </div>
         </div>

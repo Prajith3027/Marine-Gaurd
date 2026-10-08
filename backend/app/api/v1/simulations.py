@@ -21,10 +21,32 @@ from app.schemas.simulation import (
     SimulationCompareResponse,
 )
 from app.services.simulator.engine import WhatIfSimulationEngine, MANDATORY_DISCLAIMER
+from app.gis.coastal_boundary import is_land, is_water, snap_to_water
 
 logger = logging.getLogger("simulator")
 
 router = APIRouter(prefix="/simulations", tags=["What-If Simulator"])
+
+
+@router.get(
+    "/validate-location",
+    summary="Check if a candidate coordinate is in marine water area",
+)
+def validate_location(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+):
+    """Validates if a coordinate is in ocean/sea water and returns nearest water coordinate if not."""
+    water = is_water(lat, lon)
+    snapped_lat, snapped_lon = snap_to_water(lat, lon) if not water else (lat, lon)
+    return {
+        "is_water": water,
+        "is_land": not water,
+        "latitude": lat,
+        "longitude": lon,
+        "snapped_latitude": snapped_lat,
+        "snapped_longitude": snapped_lon,
+    }
 
 
 @router.post(
@@ -43,6 +65,13 @@ def create_simulation(
     Guaranteed NOT to modify production incidents.
     """
     inp = payload.inputs
+    # Constrain origin coordinate to ocean/sea water
+    if is_land(inp.latitude, inp.longitude):
+        safe_lat, safe_lon = snap_to_water(inp.latitude, inp.longitude)
+        logger.info(f"Origin ({inp.latitude}, {inp.longitude}) is on land; snapped to marine water ({safe_lat}, {safe_lon})")
+        inp.latitude = safe_lat
+        inp.longitude = safe_lon
+
     # Unit normalization to barrels
     unit = inp.spill_size_unit.upper()
     if unit == "TONS":
@@ -265,6 +294,53 @@ def get_simulation(id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Simulation with ID '{id}' not found.",
         )
+
+    # Check if cached outputs contain obsolete land-crossing waypoints or invalid coastal distances
+    if run.outputs and run.inputs:
+        wps = run.outputs.predicted_movement.get("waypoints", []) if isinstance(run.outputs.predicted_movement, dict) else []
+        has_land_wps = any(is_land(w.get("latitude", 0), w.get("longitude", 0)) for w in wps)
+        coastal_data = run.outputs.coastal_impact if isinstance(run.outputs.coastal_impact, dict) else {}
+        invalid_coast_dist = coastal_data.get("closest_distance_to_coast_km", 0) > 1000.0
+
+        if has_land_wps or invalid_coast_dist:
+            logger.info(f"Auto-refreshing simulation {id} with water-constrained geometry")
+            try:
+                # Ensure input origin is also offshore
+                inp_lat = run.inputs.latitude
+                inp_lon = run.inputs.longitude
+                if is_land(inp_lat, inp_lon):
+                    inp_lat, inp_lon = snap_to_water(inp_lat, inp_lon)
+                    run.inputs.latitude = inp_lat
+                    run.inputs.longitude = inp_lon
+
+                results = WhatIfSimulationEngine.execute_simulation(
+                    latitude=inp_lat,
+                    longitude=inp_lon,
+                    spill_size=run.inputs.spill_size,
+                    spill_size_unit=run.inputs.spill_size_unit,
+                    oil_type=run.inputs.oil_type,
+                    wind_speed_kmh=run.inputs.wind_speed_kmh,
+                    wind_direction_deg=run.inputs.wind_direction_deg,
+                    current_speed_knots=run.inputs.current_speed_knots,
+                    current_direction_deg=run.inputs.current_direction_deg,
+                    duration_hours=run.inputs.duration_hours,
+                )
+                run.outputs.predicted_movement = results["predicted_movement"]
+                run.outputs.risk = results["risk"]
+                run.outputs.ecosystem_impact = results["ecosystem_impact"]
+                run.outputs.coastal_impact = results["coastal_impact"]
+                run.outputs.priority = results["priority"]
+                run.outputs.economic_estimate = results["economic_estimate"]
+                run.outputs.recommendations = results["recommendations"]
+                run.outputs.disclaimer = results["disclaimer"]
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(run.outputs, "predicted_movement")
+                flag_modified(run.outputs, "coastal_impact")
+                db.commit()
+                db.refresh(run)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh simulation {id}: {e}")
+
     return run
 
 

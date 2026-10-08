@@ -595,6 +595,13 @@ export const apiService = {
     });
   },
 
+  /** Check if a candidate coordinate is in the ocean/sea */
+  validateSimulationLocation(lat: number, lon: number): Promise<{ is_water: boolean; is_land: boolean; snapped_latitude: number; snapped_longitude: number }> {
+    return request<{ is_water: boolean; is_land: boolean; snapped_latitude: number; snapped_longitude: number }>(
+      `/api/v1/simulations/validate-location?lat=${lat}&lon=${lon}`
+    );
+  },
+
   /** List all saved hypothetical simulation scenarios */
   getSimulations(params?: { skip?: number; limit?: number }): Promise<SimulationRunListItem[]> {
     const query = new URLSearchParams();

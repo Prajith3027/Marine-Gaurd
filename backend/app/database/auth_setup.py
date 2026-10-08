@@ -29,6 +29,9 @@ _NEW_REPORT_COLUMNS = {
     "severity": "VARCHAR(16)",
     "video_url": "VARCHAR(512)",
     "public_remarks": "TEXT",
+    "pollution_type": "VARCHAR(32) DEFAULT 'OIL_SPILL'",
+    "waste_type": "VARCHAR(64)",
+    "waste_density": "VARCHAR(32)",
 }
 
 
@@ -148,4 +151,89 @@ def seed_initial_admin(db: Session) -> bool:
         db.commit()
         logger.info("Seeded baseline citizen reports and public emergency alerts.")
 
+    seed_initial_marine_waste(db)
     return True
+
+
+def seed_initial_marine_waste(db: Session) -> bool:
+    """Pre-seeds demonstration marine waste & debris incidents along coastal India."""
+    from app.models.marine_waste import MarineWasteIncident
+    existing = db.query(MarineWasteIncident).first()
+    if existing:
+        return False
+
+    demo_incidents = [
+        MarineWasteIncident(
+            id=str(uuid.uuid4()),
+            incident_code="MW-20261008-NETS1",
+            waste_type="FISHING_NETS",
+            density="HIGH",
+            density_score=82.0,
+            estimated_area_m2=450.0,
+            estimated_items_count=8,
+            entanglement_hazard=True,
+            navigation_hazard=True,
+            pollution_score=88.5,
+            severity="CRITICAL",
+            cleanup_priority="P1 — IMMEDIATE",
+            status="REPORTED",
+            latitude=9.2876,
+            longitude=79.3129,
+            location_name="Gulf of Mannar Marine Biosphere Reserve",
+            distance_from_coast_km=1.8,
+            confidence=0.94,
+            action_taken="NONE",
+            action_notes="Submerged ghost net cluster reported by local trawlers; coral entanglement threat.",
+        ),
+        MarineWasteIncident(
+            id=str(uuid.uuid4()),
+            incident_code="MW-20261008-PLAS2",
+            waste_type="PLASTIC_BOTTLES",
+            density="MODERATE",
+            density_score=54.0,
+            estimated_area_m2=280.0,
+            estimated_items_count=320,
+            entanglement_hazard=False,
+            navigation_hazard=False,
+            pollution_score=52.0,
+            severity="HIGH",
+            cleanup_priority="P2 — HIGH",
+            status="AI_VERIFIED",
+            latitude=13.0500,
+            longitude=80.2824,
+            location_name="Marina Beach Coastal Tide Line, Chennai",
+            distance_from_coast_km=0.4,
+            confidence=0.89,
+            action_taken="NONE",
+            action_notes="Dense plastic bottle and sachet accumulation line following high tide.",
+        ),
+        MarineWasteIncident(
+            id=str(uuid.uuid4()),
+            incident_code="MW-20261008-DEBR3",
+            waste_type="MARINE_DEBRIS",
+            density="HIGH",
+            density_score=70.0,
+            estimated_area_m2=520.0,
+            estimated_items_count=45,
+            entanglement_hazard=False,
+            navigation_hazard=True,
+            pollution_score=74.0,
+            severity="HIGH",
+            cleanup_priority="P2 — HIGH",
+            status="CLEANUP_DISPATCHED",
+            latitude=18.9300,
+            longitude=72.8200,
+            location_name="Mumbai Port Approach Navigation Channel",
+            distance_from_coast_km=4.2,
+            confidence=0.91,
+            action_taken="HARBOR_SKIMMER_BOAT",
+            action_notes="Harbor skimmer boat dispatched to clear floating timber and industrial packaging.",
+        ),
+    ]
+
+    for inc in demo_incidents:
+        db.add(inc)
+    db.commit()
+    logger.info("Seeded demonstration Marine Waste & Debris incidents.")
+    return True
+

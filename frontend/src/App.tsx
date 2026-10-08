@@ -26,6 +26,8 @@ import AdminAlertsPage from "./pages/admin/AdminAlertsPage";
 import AdminEvidencePage from "./pages/admin/AdminEvidencePage";
 import AdminUserManagementPage from "./pages/admin/AdminUserManagementPage";
 import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
+import AdminMarineWastePage from "./pages/admin/AdminMarineWastePage";
+import DetectWaste from "./pages/DetectWaste";
 
 // Existing Operational Tool Pages (Preserved)
 import Dashboard from "./pages/Dashboard";
@@ -115,6 +117,11 @@ export default function App() {
               <Route path="/admin/users" element={<AdminUserManagementPage />} />
               <Route path="/admin/settings" element={<AdminSettingsPage />} />
               <Route path="/admin/voice" element={<VoiceAssistantPage />} />
+
+              {/* Marine Waste & Debris Module Routes */}
+              <Route path="/admin/waste" element={<AdminMarineWastePage />} />
+              <Route path="/waste" element={<Navigate to="/admin/waste" replace />} />
+              <Route path="/detect-waste" element={<DetectWaste />} />
 
               {/* Existing Operational & Analytical Tools (Preserved) */}
               <Route path="/dashboard" element={<Dashboard />} />

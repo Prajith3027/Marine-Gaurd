@@ -20,6 +20,7 @@ import {
   Users,
   Settings,
   Mic,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -32,19 +33,28 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  // ── Command Center ──
   { id: "dashboard",     label: "Command Center",   path: "/admin/dashboard",     Icon: LayoutDashboard },
-  { id: "incidents",     label: "Incidents Queue",  path: "/incidents",           Icon: AlertTriangle,  badge: "Live" },
+
+  // ── Module 1: Oil Spill Operations (Preserved) ──
+  { id: "incidents",     label: "Oil Spills Queue",  path: "/incidents",           Icon: AlertTriangle,  badge: "Oil" },
   { id: "detect",        label: "AI Spill Detect",  path: "/detect",              Icon: ScanSearch,     badge: "SAR" },
   { id: "ais",           label: "AIS Tracking",     path: "/admin/ais",           Icon: Ship,           badge: "Sim" },
   { id: "investigation", label: "Vessel Ranking",   path: "/admin/investigation", Icon: Ship,           badge: "AI" },
   { id: "hindcasting",   label: "Hindcast Origin",  path: "/admin/hindcasting",   Icon: RotateCcw },
   { id: "drift",         label: "Forward Drift",    path: "/admin/drift",         Icon: Waves },
+
+  // ── Module 2: Marine Waste & Debris (New Module) ──
+  { id: "waste-command", label: "Marine Waste Desk", path: "/admin/waste",        Icon: Trash2,         badge: "New" },
+  { id: "waste-detect",  label: "AI Waste Detect",  path: "/detect-waste",        Icon: ScanSearch,     badge: "Vision" },
+
+  // ── Shared Spatial, Alerts & Response ──
+  { id: "map",           label: "Map Operations",   path: "/map",                 Icon: Map },
   { id: "reports",       label: "Citizen Reports",  path: "/admin/reports",       Icon: FileText,       badge: "Triage" },
   { id: "alerts",        label: "Emergency Alerts", path: "/admin/alerts",        Icon: BellRing },
   { id: "evidence",      label: "Evidence Dossier", path: "/admin/evidence",      Icon: FileCheck },
   { id: "users",         label: "User Governance",  path: "/admin/users",         Icon: Users },
   { id: "priority",      label: "Priority Dispatch", path: "/priority",           Icon: ListOrdered },
-  { id: "map",           label: "Map Operations",   path: "/map",                 Icon: Map },
   { id: "risk",          label: "Risk Studio",      path: "/risk",                Icon: BarChart3 },
   { id: "resources",     label: "Resource Hub",     path: "/resources",           Icon: Boxes },
   { id: "simulator",     label: "What-If Simulator", path: "/simulator",          Icon: Waves },
@@ -89,9 +99,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
             {(!collapsed || mobileOpen) && (
               <div className="animate-fade-in overflow-hidden">
                 <p className="text-xs font-extrabold text-[#0B3A66] tracking-widest uppercase leading-none">
-                  OilSpill AI
+                  MARINE POLLUTION
                 </p>
-                <p className="text-[10px] text-[#5E7183] mt-0.5 font-medium">Command Center</p>
+                <p className="text-[10px] text-[#5E7183] mt-0.5 font-medium">Response System</p>
               </div>
             )}
           </div>

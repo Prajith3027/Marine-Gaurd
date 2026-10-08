@@ -106,6 +106,21 @@ def dashboard(db: Session = Depends(get_db)):
         .join(Investigation, Investigation.id == VesselScore.investigation_id)
         .where(Investigation.status.in_(("OPEN", "IN_PROGRESS")), VesselScore.investigation_score >= 35)
     ).scalar_one()
+    # Marine Waste operational counters
+    from app.models.marine_waste import MarineWasteIncident
+    waste_rows = db.execute(select(MarineWasteIncident)).scalars().all()
+    active_waste = [w for w in waste_rows if w.status != "RESOLVED"]
+    waste_critical = sum(1 for w in active_waste if w.severity == "CRITICAL")
+    waste_high_prio = sum(1 for w in active_waste if "P1" in (w.cleanup_priority or "") or "P2" in (w.cleanup_priority or ""))
+    waste_pending_actions = sum(1 for w in active_waste if w.action_taken in (None, "NONE") or w.status != "RESOLVED")
+    waste_resolved = sum(1 for w in waste_rows if w.status == "RESOLVED")
+
+    total_incidents = len(active_rows) + len(active_waste)
+    critical_total = sum(1 for i in active_rows if i.severity == IncidentSeverity.CRITICAL) + waste_critical
+    high_prio_total = high + waste_high_prio
+    pending_actions_total = len(active_rows) + waste_pending_actions
+    resolved_total = resolved + waste_resolved
+
     return {
         "active_oil_spills": len(active_rows),
         "reports_received": reports,
@@ -113,6 +128,14 @@ def dashboard(db: Session = Depends(get_db)):
         "candidate_vessels": candidates,
         "high_risk_incidents": high,
         "resolved_incidents": resolved,
+        # Unified Pollution Overview
+        "total_pollution_incidents": total_incidents,
+        "oil_spill_incidents": len(active_rows),
+        "marine_waste_incidents": len(active_waste),
+        "critical_incidents": critical_total,
+        "high_priority_incidents": high_prio_total,
+        "pending_actions": pending_actions_total,
+        "resolved_pollution_incidents": resolved_total,
     }
 
 

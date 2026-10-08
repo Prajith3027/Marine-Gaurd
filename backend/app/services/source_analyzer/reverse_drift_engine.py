@@ -9,6 +9,12 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Any
 from dataclasses import dataclass, field
 
+from app.gis.coastal_boundary import (
+    validate_and_constrain_step,
+    snap_to_water,
+    is_water,
+)
+
 
 @dataclass
 class ReverseTrajectoryStep:
@@ -111,21 +117,36 @@ class ReverseDriftEngine:
         base_radius_km = math.sqrt(max(0.1, spill_area_km2) / math.pi)
 
         steps: list[ReverseTrajectoryStep] = []
-        trajectory_coords: list[list[float]] = [[round(origin_lon, 5), round(origin_lat, 5)]]
+        cur_anchor_lat, cur_anchor_lon = snap_to_water(origin_lat, origin_lon)
+        trajectory_coords: list[list[float]] = [[round(cur_anchor_lon, 5), round(cur_anchor_lat, 5)]]
         left_envelope: list[list[float]] = []
         right_envelope: list[list[float]] = []
 
+        cur_step_lat = cur_anchor_lat
+        cur_step_lon = cur_anchor_lon
+        prev_h = 0.0
+
         for h in lookback_intervals:
-            delta_seconds = h * 3600.0
+            delta_h = h - prev_h
+            prev_h = h
+            delta_seconds = delta_h * 3600.0
             step_time = base_time - timedelta(hours=h)
 
-            # Backwards displacement (km)
+            # Backwards displacement (km) for this lookback interval
             disp_x_km = (u_back * delta_seconds) / 1000.0
             disp_y_km = (v_back * delta_seconds) / 1000.0
 
-            # Convert to lat / lon displacement
-            step_lat = origin_lat + (disp_y_km / 111.32)
-            step_lon = origin_lon + (disp_x_km / (111.32 * max(0.1, cos_lat)))
+            cand_lat = cur_step_lat + (disp_y_km / 111.32)
+            cand_lon = cur_step_lon + (disp_x_km / (111.32 * max(0.1, cos_lat)))
+
+            # Constrain step to marine water area (prevent cutting across land)
+            corr_lat, corr_lon, hit = validate_and_constrain_step(
+                (cur_step_lat, cur_step_lon),
+                (cand_lat, cand_lon),
+                offshore_margin_deg=0.005,
+            )
+            cur_step_lat = corr_lat
+            cur_step_lon = corr_lon
 
             # Expanding dispersion uncertainty radius (km)
             # Dispersion grows as square-root/sublinear function of lookback time
@@ -136,21 +157,23 @@ class ReverseDriftEngine:
             perp_dx_km = uncertainty_radius_km * math.sin(perp_angle_rad)
             perp_dy_km = uncertainty_radius_km * math.cos(perp_angle_rad)
 
-            left_lat = step_lat + (perp_dy_km / 111.32)
-            left_lon = step_lon + (perp_dx_km / (111.32 * max(0.1, cos_lat)))
+            raw_left_lat = cur_step_lat + (perp_dy_km / 111.32)
+            raw_left_lon = cur_step_lon + (perp_dx_km / (111.32 * max(0.1, cos_lat)))
+            left_lat, left_lon = snap_to_water(raw_left_lat, raw_left_lon, offshore_offset_deg=0.005)
 
-            right_lat = step_lat - (perp_dy_km / 111.32)
-            right_lon = step_lon - (perp_dx_km / (111.32 * max(0.1, cos_lat)))
+            raw_right_lat = cur_step_lat - (perp_dy_km / 111.32)
+            raw_right_lon = cur_step_lon - (perp_dx_km / (111.32 * max(0.1, cos_lat)))
+            right_lat, right_lon = snap_to_water(raw_right_lat, raw_right_lon, offshore_offset_deg=0.005)
 
             step = ReverseTrajectoryStep(
                 hours_prior=h,
                 timestamp=step_time,
-                latitude=round(step_lat, 5),
-                longitude=round(step_lon, 5),
+                latitude=round(cur_step_lat, 5),
+                longitude=round(cur_step_lon, 5),
                 uncertainty_radius_km=round(uncertainty_radius_km, 2),
                 step_summary=(
                     f"T-{h:.0f}h backward advection: estimated upstream location "
-                    f"({step_lat:.4f}°N, {step_lon:.4f}°E), uncertainty radius ±{uncertainty_radius_km:.1f} km."
+                    f"({cur_step_lat:.4f}°N, {cur_step_lon:.4f}°E), uncertainty radius ±{uncertainty_radius_km:.1f} km."
                 ),
                 left_bound_lat=round(left_lat, 5),
                 left_bound_lon=round(left_lon, 5),
@@ -158,7 +181,7 @@ class ReverseDriftEngine:
                 right_bound_lon=round(right_lon, 5),
             )
             steps.append(step)
-            trajectory_coords.append([round(step_lon, 5), round(step_lat, 5)])
+            trajectory_coords.append([round(cur_step_lon, 5), round(cur_step_lat, 5)])
             left_envelope.append([round(left_lon, 5), round(left_lat, 5)])
             right_envelope.append([round(right_lon, 5), round(right_lat, 5)])
 

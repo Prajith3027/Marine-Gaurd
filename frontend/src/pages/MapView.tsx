@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   MapCanvas,
@@ -9,8 +9,9 @@ import {
 } from "../components/map/MapLayerControls";
 import { MapLegend } from "../components/map/MapLegend";
 import { SpatialAnalysisPanel } from "../components/map/SpatialAnalysisPanel";
-import { MapSearchBar } from "../components/map/MapSearchBar";
+import { MapSearchBar, type GISModuleFilter } from "../components/map/MapSearchBar";
 import apiService from "../services/api";
+import { wasteApi, type WasteGISLayers } from "../services/wasteApi";
 import type {
   MapLayersResponse,
   MapIncidentPoint,
@@ -31,6 +32,7 @@ export default function MapView() {
   const preselectedId = searchParams.get("incidentId");
 
   const [layersData, setLayersData] = useState<MapLayersResponse | null>(null);
+  const [wasteLayers, setWasteLayers] = useState<WasteGISLayers | null>(null);
   const [vessels, setVessels] = useState<ActiveVesselPoint[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export default function MapView() {
   const [sourceAnalysis, setSourceAnalysis] = useState<SourceAnalysisResponse | null>(null);
 
   const [severityFilter, setSeverityFilter] = useState<IncidentSeverity | "ALL">("ALL");
+  const [moduleFilter, setModuleFilter] = useState<GISModuleFilter>("ALL");
   const [basemap, setBasemap] = useState<"dark" | "satellite" | "osm">("dark");
 
   const [mapCenter, setMapCenter] = useState<[number, number]>([10.0, 75.0]);
@@ -89,6 +92,7 @@ export default function MapView() {
     coastline: true,
     responseRouting: true,
     sourceAnalysis: true,
+    marineWaste: true,
   });
 
   // Fetch all map layers & live vessel traffic
@@ -96,12 +100,14 @@ export default function MapView() {
     try {
       setLoading(true);
       setError(null);
-      const [layers, vesselRes] = await Promise.all([
+      const [layers, vesselRes, wasteData] = await Promise.all([
         apiService.getMapLayers(true),
         apiService.getLiveVessels().catch(() => ({ total: 0, vessels: [] })),
+        wasteApi.getMapLayers().catch(() => null),
       ]);
       setLayersData(layers);
       setVessels(vesselRes.vessels || []);
+      setWasteLayers(wasteData ? { incidents: wasteData } : null);
 
       // If preselected incident from query param, select it
       if (preselectedId && layers.incidents.length > 0) {
@@ -295,11 +301,52 @@ export default function MapView() {
     setVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Filtered incidents based on severity
+  const handleModuleFilterChange = (mod: GISModuleFilter) => {
+    setModuleFilter(mod);
+    if (mod === "ALL") {
+      setVisibility((prev) => ({
+        ...prev,
+        incidents: true,
+        spillPolygons: true,
+        marineWaste: true,
+      }));
+    } else if (mod === "OIL_SPILL") {
+      setVisibility((prev) => ({
+        ...prev,
+        incidents: true,
+        spillPolygons: true,
+        marineWaste: false,
+      }));
+    } else if (mod === "MARINE_WASTE") {
+      setVisibility((prev) => ({
+        ...prev,
+        incidents: false,
+        spillPolygons: false,
+        marineWaste: true,
+      }));
+    }
+  };
+
+  // Filtered oil spill incidents based on severity
   const visibleIncidents = (layersData?.incidents || []).filter((inc) => {
     if (severityFilter === "ALL") return true;
     return inc.severity === severityFilter;
   });
+
+  // Filtered marine waste layer features based on severity
+  const visibleWasteLayers = useMemo(() => {
+    if (!wasteLayers) return null;
+    if (severityFilter === "ALL") return wasteLayers;
+    return {
+      ...wasteLayers,
+      incidents: {
+        ...wasteLayers.incidents,
+        features: (wasteLayers.incidents.features || []).filter(
+          (f: any) => f.properties?.severity === severityFilter
+        ),
+      },
+    };
+  }, [wasteLayers, severityFilter]);
 
   return (
     <div className="relative w-full h-[calc(100vh-70px)] overflow-hidden bg-[#020b17]">
@@ -311,6 +358,8 @@ export default function MapView() {
           onSelectIncident={handleSelectIncident}
           severityFilter={severityFilter}
           onSeverityFilterChange={setSeverityFilter}
+          moduleFilter={moduleFilter}
+          onModuleFilterChange={handleModuleFilterChange}
         />
       )}
 
@@ -469,6 +518,7 @@ export default function MapView() {
           mapCenter={mapCenter}
           mapZoom={mapZoom}
           basemap={basemap}
+          wasteLayers={visibleWasteLayers}
         />
       )}
     </div>
