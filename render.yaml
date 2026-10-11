@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────
+# Marine Gaurd — Render Deployment Blueprint
+# Declarative Infrastructure as Code (render.yaml)
+# ─────────────────────────────────────────────
+
+services:
+  # 1. FastAPI Backend Web Service
+  - type: web
+    name: marine-guard-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard
+    healthCheckPath: /health
+    disk:
+      name: marine-guard-uploads
+      mountPath: /app/uploads
+      sizeGB: 10
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+
+  # 2. React / Vite Frontend Static Site
+  - type: web
+    name: marine-guard-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+
+# ─────────────────────────────────────────────
+# Prerequisites & Deployment Blockers for Render:
+#
+# 1. PostGIS Database Prerequisite:
+#    Render managed PostgreSQL does NOT include PostGIS extensions by default.
+#    Before connecting, provision a PostgreSQL 15+ database, connect via psql, and run:
+#      CREATE EXTENSION IF NOT EXISTS postgis;
+#      CREATE EXTENSION IF NOT EXISTS postgis_topology;
+#    Then supply the connection string as DATABASE_URL.
+#
+# 2. ML Model Weights Storage Limitation (BLOCKED ON RENDER):
+#    Render web services support at most one persistent disk (mounted above at /app/uploads).
+#    The PyTorch model weights (models/oil_spill_demo_best.pth) are NOT stored in /app/uploads
+#    and are NOT baked into the backend Docker image.
+#    Until external cloud storage (e.g. AWS S3 / Cloudflare R2 / GCS) or image weight baking
+#    is implemented, deep learning oil-spill inference on Render will fail safely
+#    (OilSpillInference.is_available() returns false).
+# ─────────────────────────────────────────────

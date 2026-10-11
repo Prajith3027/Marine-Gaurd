@@ -1,0 +1,14 @@
+# Backend Dockerignore
+.env
+*.env
+*.db
+*.sqlite
+*.dump
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+uploads/
+backups/

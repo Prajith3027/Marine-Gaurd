@@ -1,0 +1,77 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────
+# Marine Gaurd — Production Docker Compose
+# Multi-container production deployment stack
+# ─────────────────────────────────────────────
+
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: marine_guard_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oilspill_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-oilspill_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - marine_internal_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oilspill_user} -d ${POSTGRES_DB:-oilspill_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Port 5432 intentionally NOT published to host in production for private isolation
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: marine_guard_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oilspill_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oilspill_db}
+      SECRET_KEY: ${SECRET_KEY}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-}
+    volumes:
+      - uploads_data:/app/uploads/reports
+      - ./models:/app/models:ro
+    networks:
+      - marine_internal_network
+    # Backend port 8000 accessed internally via Nginx reverse proxy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    container_name: marine_guard_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${HOST_HTTP_PORT:-80}:80"
+    networks:
+      - marine_internal_network
+
+volumes:
+  pgdata:
+    name: marine_guard_pgdata
+  uploads_data:
+    name: marine_guard_uploads
+
+networks:
+  marine_internal_network:
+    name: marine_guard_internal
+    driver: bridge
