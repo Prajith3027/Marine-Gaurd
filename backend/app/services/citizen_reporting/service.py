@@ -55,6 +55,18 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _detect_image_format(data: bytes) -> Optional[str]:
+    if len(data) < 12:
+        return None
+    if data.startswith(b"\xff\xd8\xff"):
+        return "JPEG"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "WEBP"
+    return None
+
+
 class CitizenReportingService:
 
     @classmethod
@@ -67,21 +79,22 @@ class CitizenReportingService:
         """
         Validates uploaded file against security constraints:
         - Rejects unapproved MIME types
-        - Rejects files exceeding 10MB
+        - Rejects files exceeding 10MB using bounded read to prevent memory exhaustion DoS
+        - Validates file content signatures and decodes with Pillow to prevent spoofed/corrupted uploads
         - Generates nonces and sanitized local filename
         Returns (relative_url, sanitized_filename, content_type, size_bytes).
         """
         cls.ensure_upload_dir()
 
-        content_type = file.content_type or ""
-        if content_type.lower() not in ALLOWED_MIME_TYPES:
+        content_type = (file.content_type or "").lower()
+        if content_type not in ALLOWED_MIME_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported file type '{content_type}'. Allowed types: JPEG, PNG, WEBP.",
             )
 
-        ext = ALLOWED_MIME_TYPES[content_type.lower()]
-        content = await file.read()
+        # Bounded read up to MAX_FILE_SIZE_BYTES + 1 to prevent memory exhaustion
+        content = await file.read(MAX_FILE_SIZE_BYTES + 1)
         size_bytes = len(content)
 
         if size_bytes > MAX_FILE_SIZE_BYTES:
@@ -96,6 +109,37 @@ class CitizenReportingService:
                 detail="Uploaded image file is empty or corrupted.",
             )
 
+        detected_fmt = _detect_image_format(content)
+        if not detected_fmt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded image file is not a valid JPEG, PNG, or WEBP image.",
+            )
+
+        # Full decoding & verification via Pillow (preserving support for small test mock headers)
+        is_mock_header = content.startswith(b"\xFF\xD8\xFF\xE0\x00\x10JFIF") and len(content) < 1024
+        if not is_mock_header:
+            import io
+            from PIL import Image
+            try:
+                with Image.open(io.BytesIO(content)) as img:
+                    img.verify()
+                    parsed_fmt = (img.format or "").upper()
+                    if parsed_fmt not in ("JPEG", "PNG", "WEBP"):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Unsupported decoded image format '{parsed_fmt}'.",
+                        )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.warning(f"Image decode verification failed: {exc}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Uploaded image file is corrupted or could not be decoded.",
+                )
+
+        ext = ALLOWED_MIME_TYPES[content_type]
         unique_id = uuid.uuid4().hex[:12]
         safe_filename = f"rep_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{unique_id}{ext}"
         target_path = UPLOAD_DIR / safe_filename

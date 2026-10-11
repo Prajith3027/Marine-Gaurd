@@ -7,10 +7,34 @@ synthetic administrator so they keep validating the (unchanged) AI / GIS / AIS l
 Tests in test_auth_rbac.py opt OUT of this override and exercise the real auth stack.
 """
 import os
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+import shutil
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
-
 import pytest
+
+from app.core.config import PROJECT_ROOT, BACKEND_DIR, normalize_sqlite_url, validate_test_database_url, FORBIDDEN_TEST_DBS
+
+# Ensure tests NEVER touch the 4 existing databases or the production/app database.
+# Support TEST_DATABASE_URL override (with safety validation), otherwise use a dedicated temporary isolated database.
+_TEST_TEMP_DIR = globals().get("_TEST_TEMP_DIR")
+if not os.environ.get("_MG_TEST_INITIALIZED"):
+    os.environ["_MG_TEST_INITIALIZED"] = "1"
+    _CUSTOM_TEST_URL = os.environ.get("TEST_DATABASE_URL")
+    if _CUSTOM_TEST_URL:
+        os.environ["DATABASE_URL"] = validate_test_database_url(_CUSTOM_TEST_URL)
+    else:
+        _TEST_TEMP_DIR = tempfile.mkdtemp(prefix="mg_test_isolated_")
+        _ISOLATED_TEST_DB = Path(_TEST_TEMP_DIR) / "isolated_test.db"
+        os.environ["DATABASE_URL"] = f"sqlite:///{_ISOLATED_TEST_DB.as_posix()}"
+
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+
+    from app.database.session import reset_engine, Base, engine
+    reset_engine()
+    import app.models  # noqa: F401
+    Base.metadata.create_all(bind=engine)
 
 from app.core.auth import authenticate_user
 from app.main import app
@@ -39,7 +63,39 @@ def pytest_configure(config):
     # install the override immediately so those clients are authenticated as well.
     from app.main import app as main_app
     main_app.dependency_overrides[authenticate_user] = _fake_admin
-    # Ensure all tables are created on the test SQLite database
+    # Ensure all tables are created on the isolated test database
     import app.models  # noqa: F401
-    from app.database.session import Base, engine
+    from app.database.session import Base, engine, SessionLocal
     Base.metadata.create_all(bind=engine)
+    from app.database.auth_setup import migrate_citizen_reports, seed_demo_data
+    migrate_citizen_reports()
+    with SessionLocal() as _db:
+        from app.models.user import User, ROLE_ADMIN
+        from app.core.security import hash_password
+        if not _db.query(User).filter(User.email == "admin@maritime.gov.in").first():
+            _db.add(User(
+                name="Test Administrator",
+                email="admin@maritime.gov.in",
+                password_hash=hash_password("Admin@Maritime2026"),
+                role=ROLE_ADMIN,
+                is_active=True,
+            ))
+            _db.commit()
+        seed_demo_data(_db)
+
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Dispose engine and clean up isolated test directory after all tests complete."""
+    from app.database.session import engine
+    if engine is not None:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+    if _TEST_TEMP_DIR and os.path.exists(_TEST_TEMP_DIR):
+        try:
+            shutil.rmtree(_TEST_TEMP_DIR, ignore_errors=True)
+        except Exception:
+            pass
+

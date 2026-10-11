@@ -15,8 +15,8 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
 from app.core import security
-from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.config import Settings, get_settings
+from app.core.security import hash_password, _secret
 from app.database.session import Base, get_db
 from app.main import app
 from app.models.user import User
@@ -24,6 +24,8 @@ from app.models.user import User
 pytestmark = pytest.mark.real_auth
 
 PW = "S3cure-Passw0rd!"
+# Test-only secret key (>= 32 bytes to conform to RFC 7518 Section 3.2 for HMAC-SHA256)
+TEST_WRONG_SECRET = "wrong_hmac_signing_key_for_tampering_test_min_32_bytes"
 
 
 @pytest.fixture()
@@ -162,9 +164,16 @@ def test_token_expiry_and_tampering(env):
     expired = jwt.encode({"sub": "c1", "role": "citizen", "iat": 1, "exp": int(
         (datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp())}, s.secret_key, algorithm="HS256")
     assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"}).status_code == 401
-    forged = jwt.encode({"sub": "c1", "role": "admin", "iat": 1, "exp": 9999999999}, "wrong", algorithm="HS256")
+    forged = jwt.encode({"sub": "c1", "role": "admin", "iat": 1, "exp": 9999999999}, TEST_WRONG_SECRET, algorithm="HS256")
     assert c.get("/api/admin/dashboard", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
     assert c.get("/api/auth/me", headers={"Authorization": "Bearer garbage"}).status_code == 401
+
+    # Tampering with signature bytes of an otherwise valid token must be rejected
+    valid_token, _ = security.create_access_token("c1", "citizen")
+    parts = valid_token.split(".")
+    tampered_sig = parts[2][:-1] + ("X" if parts[2][-1] != "X" else "Y")
+    tampered_token = f"{parts[0]}.{parts[1]}.{tampered_sig}"
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tampered_token}"}).status_code == 401
 
 
 def test_role_claim_in_token_is_not_trusted(env):
@@ -173,6 +182,74 @@ def test_role_claim_in_token_is_not_trusted(env):
     s = get_settings()
     t = jwt.encode({"sub": "c1", "role": "admin", "iat": 1, "exp": 9999999999}, s.secret_key, algorithm="HS256")
     assert c.get("/api/admin/dashboard", headers={"Authorization": f"Bearer {t}"}).status_code == 403
+
+
+# ── JWT security & production secret validation ────────────────────────────
+
+def test_production_rejects_missing_secret():
+    """Production must reject missing or empty secrets rather than silently using a weak default."""
+    with pytest.raises(ValueError, match="SECRET_KEY is missing or empty"):
+        Settings(app_env="production", secret_key="")
+    with pytest.raises(ValueError, match="SECRET_KEY is missing or empty"):
+        Settings(app_env="production", secret_key="   ")
+
+
+def test_production_rejects_default_or_insecure_secrets():
+    """Production must reject known insecure default placeholders."""
+    insecure_keys = [
+        "CHANGE_ME_IN_PRODUCTION",
+        "your_secret_key_here",
+        "dev_secret_key_change_in_production",
+        "secret",
+        "changeme",
+        "admin",
+        "password",
+    ]
+    for key in insecure_keys:
+        with pytest.raises(ValueError, match="Insecure or default SECRET_KEY detected"):
+            Settings(app_env="production", secret_key=key)
+
+
+def test_production_rejects_short_secret():
+    """Production must reject secrets under 32 bytes (256 bits) for HMAC-SHA256."""
+    with pytest.raises(ValueError, match="must be at least 32 bytes"):
+        Settings(app_env="production", secret_key="short_16_byte_key")
+
+
+def test_production_accepts_secure_secret():
+    """Production must accept cryptographically strong secrets of at least 32 bytes."""
+    valid_key = "a_very_secure_random_key_that_is_at_least_32_bytes_long_12345"
+    s = Settings(app_env="production", secret_key=valid_key)
+    assert s.secret_key == valid_key
+
+
+def test_security_secret_function_enforces_production_rules(monkeypatch):
+    """security._secret() must fail-safe if an insecure key reaches runtime outside development."""
+    prod_settings_mock = Settings(
+        app_env="development",
+        secret_key="dev_secret_key_change_in_production",
+    )
+    prod_settings_mock.app_env = "production"
+    monkeypatch.setattr("app.core.security.get_settings", lambda: prod_settings_mock)
+
+    # Insecure default
+    prod_settings_mock.secret_key = "CHANGE_ME_IN_PRODUCTION"
+    with pytest.raises(RuntimeError, match="Insecure default SECRET_KEY detected"):
+        _secret()
+
+    # Empty
+    prod_settings_mock.secret_key = ""
+    with pytest.raises(RuntimeError, match="SECRET_KEY is missing or empty"):
+        _secret()
+
+    # Short (< 32 bytes)
+    prod_settings_mock.secret_key = "short_key"
+    with pytest.raises(RuntimeError, match="must be at least 32 bytes"):
+        _secret()
+
+    # Valid >= 32 bytes
+    prod_settings_mock.secret_key = "a_very_secure_random_key_that_is_at_least_32_bytes_long_12345"
+    assert _secret() == "a_very_secure_random_key_that_is_at_least_32_bytes_long_12345"
 
 
 def test_deactivation_blocks_existing_token(env):

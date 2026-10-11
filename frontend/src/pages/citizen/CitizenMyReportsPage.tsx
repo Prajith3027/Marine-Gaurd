@@ -10,6 +10,7 @@ import {
 import { citizenApi } from "../../services/citizenApi";
 import type { CitizenReportItem } from "../../types/auth";
 import { MarineLoader } from "../../components/ui/MarineLoader";
+import { AuthImage, AuthVideo } from "../../components/ui/AuthMedia";
 
 export default function CitizenMyReportsPage() {
   const [reports, setReports] = useState<CitizenReportItem[]>([]);
@@ -249,7 +250,7 @@ export default function CitizenMyReportsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {selectedReport.photo_url && (
                     <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black">
-                      <img
+                      <AuthImage
                         src={selectedReport.photo_url}
                         alt="Submitted evidence"
                         className="w-full h-44 object-contain"
@@ -258,9 +259,8 @@ export default function CitizenMyReportsPage() {
                   )}
                   {selectedReport.video_url && (
                     <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black flex items-center justify-center">
-                      <video
+                      <AuthVideo
                         src={selectedReport.video_url}
-                        controls
                         className="w-full h-44 object-contain"
                       />
                     </div>

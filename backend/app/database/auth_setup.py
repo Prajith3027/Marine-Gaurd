@@ -47,24 +47,90 @@ def migrate_citizen_reports(bind=engine) -> None:
                 logger.info("Added citizen_reports.%s", col)
 
 
+INSECURE_ADMIN_PASSWORDS = {
+    "admin@maritime2026",
+    "admin",
+    "admin123",
+    "admin@123",
+    "changeme",
+    "password",
+    "secret",
+}
+
+
 def seed_initial_admin(db: Session) -> bool:
+    """
+    Provisions ONLY the configured initial administrator account.
+    Requires valid INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD from configuration.
+    Fails safely without creating demo data or falling back to default credentials.
+    Idempotent: does not overwrite, change role, or reset password if already present.
+    """
     s = get_settings()
 
-    # 1. Seed Admin Account
-    admin_email = (s.initial_admin_email or "admin@maritime.gov.in").strip().lower()
-    admin_pass = s.initial_admin_password or "Admin@Maritime2026"
-    existing_admin = db.query(User).filter(User.email == admin_email).first()
-    if not existing_admin:
-        db.add(User(
-            name=s.initial_admin_name or "Authorized Administrator",
-            email=admin_email,
-            password_hash=hash_password(admin_pass),
-            role=ROLE_ADMIN,
-            is_active=True,
-        ))
-        logger.info("Seeded initial admin account %s", admin_email)
+    admin_email = (s.initial_admin_email or "").strip().lower()
+    admin_pass = s.initial_admin_password or ""
 
-    # 2. Seed Demo Citizen Account
+    if not admin_email or "@" not in admin_email:
+        logger.warning(
+            "Initial admin seeding skipped: INITIAL_ADMIN_EMAIL is not configured or is invalid. "
+            "Set INITIAL_ADMIN_EMAIL in the environment to provision the administrator."
+        )
+        return False
+
+    if not admin_pass:
+        logger.warning(
+            "Initial admin seeding skipped: INITIAL_ADMIN_PASSWORD is not configured. "
+            "Set a strong INITIAL_ADMIN_PASSWORD in the environment to provision the administrator."
+        )
+        return False
+
+    if admin_pass.lower() in INSECURE_ADMIN_PASSWORDS:
+        logger.warning(
+            "Initial admin seeding rejected: Insecure or default INITIAL_ADMIN_PASSWORD detected. "
+            "A secure, non-default password is required."
+        )
+        return False
+
+    try:
+        from app.core.security import validate_password_strength
+        validate_password_strength(admin_pass)
+    except ValueError as e:
+        logger.warning("Initial admin seeding rejected: %s", e)
+        return False
+
+    existing_admin = db.query(User).filter(User.email == admin_email).first()
+    if existing_admin:
+        logger.info("Admin account already exists for %s; skipping seeding.", admin_email)
+        return False
+
+    admin_name = (s.initial_admin_name or "Authorized Administrator").strip()
+    new_admin = User(
+        name=admin_name,
+        email=admin_email,
+        password_hash=hash_password(admin_pass),
+        role=ROLE_ADMIN,
+        is_active=True,
+    )
+    db.add(new_admin)
+    db.commit()
+    logger.info("Successfully provisioned initial administrator account for %s.", admin_email)
+    return True
+
+
+def seed_demo_data(db: Session) -> bool:
+    """
+    Explicit, opt-in development and testing demonstration data seeder.
+    Never runs automatically in production.
+    Seeds demo citizen, sample baseline incidents, demo citizen report, demo alert,
+    and demo marine waste incidents.
+    """
+    s = get_settings()
+    env_lower = (s.app_env or "").strip().lower()
+    if env_lower not in ("development", "dev", "test", "testing"):
+        logger.warning("Demo data seeding is strictly disallowed in non-development environment: %s", s.app_env)
+        return False
+
+    # 1. Seed Demo Citizen Account
     citizen_email = "citizen@marine.org"
     existing_citizen = db.query(User).filter(User.email == citizen_email).first()
     if not existing_citizen:
@@ -79,7 +145,7 @@ def seed_initial_admin(db: Session) -> bool:
 
     db.commit()
 
-    # 3. Seed Sample Incidents if none exist
+    # 2. Seed Sample Incidents if none exist
     incident_count = db.query(Incident).count()
     if incident_count == 0:
         inc1_id = str(uuid.uuid4())

@@ -325,7 +325,7 @@ class MultilingualIntentEngine:
             return {"intent": "VIEW_VESSEL_RANKING", "text": "No active incident found for vessel correlation.", "voice_text": "No active incident found."}
 
         try:
-            sa = SourceAnalyzerService().evaluate_source_analysis(db, inc.id, force_recalculate=False)
+            sa = SourceAnalyzerService().evaluate_source_analysis(db, inc.id, force_recalculate=False, persist=False)
             sa_data = sa.model_dump()
         except Exception:
             sa_data = None
@@ -361,7 +361,7 @@ class MultilingualIntentEngine:
             return {"intent": "RUN_HINDCASTING", "text": "No active incident to hindcast.", "voice_text": "No active incident to hindcast."}
 
         try:
-            sa = SourceAnalyzerService().evaluate_source_analysis(db, inc.id, force_recalculate=False)
+            sa = SourceAnalyzerService().evaluate_source_analysis(db, inc.id, force_recalculate=False, persist=False)
             hc_data = sa.model_dump()
             cands = sorted(hc_data.get("candidates", []), key=lambda c: c.get("rank_order", 0))
             top_cand = cands[0] if cands else None

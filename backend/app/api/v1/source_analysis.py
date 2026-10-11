@@ -39,6 +39,7 @@ def evaluate_source_analysis(
             lookback_hours=payload.lookback_hours,
             force_recalculate=payload.force_recalculate,
             custom_drift_multiplier=payload.custom_drift_multiplier,
+            persist=True,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

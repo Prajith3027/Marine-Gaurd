@@ -63,9 +63,12 @@ class SourceAnalyzerService:
         lookback_hours: float = 24.0,
         force_recalculate: bool = True,
         custom_drift_multiplier: Optional[float] = None,
+        persist: bool = True,
     ) -> SourceAnalysisResponse:
         """
         Executes or fetches the probable spill source analysis for an incident.
+        When persist=False, calculations are performed on-the-fly without writing
+        to SourceAnalysis, SourceCandidate, SourceEvidence, or IncidentEvent.
         """
         incident = db.query(Incident).filter(Incident.id == incident_id).first()
         if not incident:
@@ -135,35 +138,72 @@ class SourceAnalyzerService:
         primary_region_name = f"Region A — {matched_lane['name'] if matched_lane else 'Upstream Marine Transit Sector'}"
 
         # 3. Create or Update SourceAnalysis Record
-        if existing:
-            analysis = existing
-            analysis.analyzed_at = datetime.now(timezone.utc)
-            analysis.overall_confidence_score = primary_confidence
-            analysis.primary_source_region_name = primary_region_name
-            analysis.estimated_discharge_time_start = est_discharge_start
-            analysis.estimated_discharge_time_end = est_discharge_end
-            analysis.lookback_hours = lookback_hours
-            analysis.reverse_trajectory_json = [
-                {
-                    "hours_prior": s.hours_prior,
-                    "timestamp": s.timestamp.isoformat(),
-                    "latitude": s.latitude,
-                    "longitude": s.longitude,
-                    "uncertainty_radius_km": s.uncertainty_radius_km,
-                    "step_summary": s.step_summary,
-                }
-                for s in steps
-            ]
-            analysis.reverse_cone_geojson = reverse_result.envelope_polygon_geojson
-            analysis.methodology_notes = (
-                f"Reverse Lagrangian advection computed with backwards bearing {reverse_result.backwards_bearing_deg}° "
-                f"at {reverse_result.drift_speed_kmh} km/h advection velocity. Expanding uncertainty cone cross-referenced "
-                f"with bathymetric fairways and AIS historical vessel telemetry."
-            )
-            analysis.legal_disclaimer = self.SAFE_LEGAL_DISCLAIMER
-            analysis.updated_at = datetime.now(timezone.utc)
+        if persist:
+            if existing:
+                analysis = existing
+                analysis.analyzed_at = datetime.now(timezone.utc)
+                analysis.overall_confidence_score = primary_confidence
+                analysis.primary_source_region_name = primary_region_name
+                analysis.estimated_discharge_time_start = est_discharge_start
+                analysis.estimated_discharge_time_end = est_discharge_end
+                analysis.lookback_hours = lookback_hours
+                analysis.reverse_trajectory_json = [
+                    {
+                        "hours_prior": s.hours_prior,
+                        "timestamp": s.timestamp.isoformat(),
+                        "latitude": s.latitude,
+                        "longitude": s.longitude,
+                        "uncertainty_radius_km": s.uncertainty_radius_km,
+                        "step_summary": s.step_summary,
+                    }
+                    for s in steps
+                ]
+                analysis.reverse_cone_geojson = reverse_result.envelope_polygon_geojson
+                analysis.methodology_notes = (
+                    f"Reverse Lagrangian advection computed with backwards bearing {reverse_result.backwards_bearing_deg}° "
+                    f"at {reverse_result.drift_speed_kmh} km/h advection velocity. Expanding uncertainty cone cross-referenced "
+                    f"with bathymetric fairways and AIS historical vessel telemetry."
+                )
+                analysis.legal_disclaimer = self.SAFE_LEGAL_DISCLAIMER
+                analysis.updated_at = datetime.now(timezone.utc)
+            else:
+                analysis = SourceAnalysis(
+                    incident_id=incident_id,
+                    analyzed_at=datetime.now(timezone.utc),
+                    overall_confidence_score=primary_confidence,
+                    primary_source_region_name=primary_region_name,
+                    estimated_discharge_time_start=est_discharge_start,
+                    estimated_discharge_time_end=est_discharge_end,
+                    lookback_hours=lookback_hours,
+                    reverse_trajectory_json=[
+                        {
+                            "hours_prior": s.hours_prior,
+                            "timestamp": s.timestamp.isoformat(),
+                            "latitude": s.latitude,
+                            "longitude": s.longitude,
+                            "uncertainty_radius_km": s.uncertainty_radius_km,
+                            "step_summary": s.step_summary,
+                        }
+                        for s in steps
+                    ],
+                    reverse_cone_geojson=reverse_result.envelope_polygon_geojson,
+                    methodology_notes=(
+                        f"Reverse Lagrangian advection computed with backwards bearing {reverse_result.backwards_bearing_deg}° "
+                        f"at {reverse_result.drift_speed_kmh} km/h advection velocity. Expanding uncertainty cone cross-referenced "
+                        f"with bathymetric fairways and AIS historical vessel telemetry."
+                    ),
+                    legal_disclaimer=self.SAFE_LEGAL_DISCLAIMER,
+                )
+                db.add(analysis)
+                db.flush()
+
+            # Delete old candidates and evidence
+            db.query(SourceCandidate).filter(SourceCandidate.analysis_id == analysis.id).delete()
+            db.query(SourceEvidence).filter(SourceEvidence.analysis_id == analysis.id).delete()
+            db.flush()
         else:
             analysis = SourceAnalysis(
+                id=str(uuid.uuid4()),
                 incident_id=incident_id,
                 analyzed_at=datetime.now(timezone.utc),
                 overall_confidence_score=primary_confidence,
@@ -190,17 +230,11 @@ class SourceAnalyzerService:
                 ),
                 legal_disclaimer=self.SAFE_LEGAL_DISCLAIMER,
             )
-            db.add(analysis)
-            db.flush()
-
-        # Delete old candidates and evidence
-        db.query(SourceCandidate).filter(SourceCandidate.analysis_id == analysis.id).delete()
-        db.query(SourceEvidence).filter(SourceEvidence.analysis_id == analysis.id).delete()
-        db.flush()
 
         # 4. Generate 3 Tiered Source Candidates (Regions A, B, C)
         # Region A: Immediate Upstream Corridor (0-6h lookback, highest confidence)
         candidate_a = SourceCandidate(
+            id=str(uuid.uuid4()),
             analysis_id=analysis.id,
             name=f"Region A — {matched_lane['name'] if matched_lane else 'Primary Upstream Corridor'}",
             candidate_code="REGION_A",
@@ -221,11 +255,11 @@ class SourceAnalyzerService:
                 f"windage vector 3.5% coefficient. Dispersion radius ±{steps[min(2, len(steps)-1)].uncertainty_radius_km:.1f} km."
             ),
         )
-        db.add(candidate_a)
 
         # Region B: Intermediate Transit Fairway (6-18h lookback, moderate confidence)
         conf_b = max(45.0, round(primary_confidence * 0.78, 1))  # e.g. ~61%
         candidate_b = SourceCandidate(
+            id=str(uuid.uuid4()),
             analysis_id=analysis.id,
             name=f"Region B — Central Fairway & Tanker Convergence Zone",
             candidate_code="REGION_B",
@@ -243,11 +277,11 @@ class SourceAnalyzerService:
             ),
             environmental_factors_summary="Moderate hydrodynamic stability; expanded dispersion envelope.",
         )
-        db.add(candidate_b)
 
         # Region C: Outer Anchorage / Approaches (18-36h lookback, lower confidence)
         conf_c = max(30.0, round(primary_confidence * 0.54, 1))  # e.g. ~42%
         candidate_c = SourceCandidate(
+            id=str(uuid.uuid4()),
             analysis_id=analysis.id,
             name=f"Region C — {matched_port['name'] if matched_port else 'Outer Anchorage Approach Sector'}",
             candidate_code="REGION_C",
@@ -265,12 +299,17 @@ class SourceAnalyzerService:
             ),
             environmental_factors_summary="Higher atmospheric variance and coastal tidal current boundary effects.",
         )
-        db.add(candidate_c)
-        db.flush()
+
+        if persist:
+            db.add(candidate_a)
+            db.add(candidate_b)
+            db.add(candidate_c)
+            db.flush()
 
         # 5. Populate Supporting Evidence Items (with strictly compliant safe wording)
         # Evidence 1: Reverse Trajectory Physics Evidence
         ev1 = SourceEvidence(
+            id=str(uuid.uuid4()),
             analysis_id=analysis.id,
             candidate_id=candidate_a.id,
             evidence_category="REVERSE_TRAJECTORY",
@@ -287,10 +326,10 @@ class SourceAnalyzerService:
                 "lookback_hours": lookback_hours,
             },
         )
-        db.add(ev1)
 
         # Evidence 2: Shipping Lane Overlap Evidence
         ev2 = SourceEvidence(
+            id=str(uuid.uuid4()),
             analysis_id=analysis.id,
             candidate_id=candidate_a.id,
             evidence_category="SHIPPING_LANE_OVERLAP",
@@ -303,12 +342,13 @@ class SourceAnalyzerService:
             relevance_wording="Spatial intersection with designated maritime transportation fairway.",
             evidence_data_json=matched_lane or {},
         )
-        db.add(ev2)
 
         # Evidence 3: Contextual AIS Vessel Proximity (Strictly Safe Terminology)
         context_vessels = self._find_context_vessels(step_6h_lat, step_6h_lon, db)
+        vessel_evidences = []
         for v in context_vessels:
             ev_vessel = SourceEvidence(
+                id=str(uuid.uuid4()),
                 analysis_id=analysis.id,
                 candidate_id=candidate_a.id,
                 evidence_category="AIS_VESSEL_PROXIMITY",
@@ -327,11 +367,13 @@ class SourceAnalyzerService:
                 relevance_wording=self.SAFE_VESSEL_RELEVANCE_WORDING,
                 evidence_data_json=v,
             )
-            db.add(ev_vessel)
+            vessel_evidences.append(ev_vessel)
 
         # Evidence 4: Port Anchorage Proximity Evidence
+        ev4 = None
         if matched_port:
             ev4 = SourceEvidence(
+                id=str(uuid.uuid4()),
                 analysis_id=analysis.id,
                 candidate_id=candidate_c.id,
                 evidence_category="PORT_TRAFFIC_CONVERGENCE",
@@ -344,27 +386,43 @@ class SourceAnalyzerService:
                 relevance_wording="Anchorage approaches represent secondary potential origin for statutory review.",
                 evidence_data_json=matched_port,
             )
-            db.add(ev4)
 
-        # 6. Audit Trail IncidentEvent Logging
-        evt_desc = (
-            f"Probable spill source analysis evaluated: Primary region '{primary_region_name}' "
-            f"identified with {primary_confidence:.1f}% confidence ({len(context_vessels)} potentially relevant vessels noted for statutory review)."
-        )
-        evt = IncidentEvent(
-            incident_id=incident_id,
-            event_type="SOURCE_ANALYSIS_EVALUATED",
-            description=evt_desc,
-            created_by="Source Analyzer Engine",
-        )
-        db.add(evt)
-        db.commit()
-        db.refresh(analysis)
+        if persist:
+            db.add(ev1)
+            db.add(ev2)
+            for ev_v in vessel_evidences:
+                db.add(ev_v)
+            if ev4:
+                db.add(ev4)
+
+            # 6. Audit Trail IncidentEvent Logging
+            evt_desc = (
+                f"Probable spill source analysis evaluated: Primary region '{primary_region_name}' "
+                f"identified with {primary_confidence:.1f}% confidence ({len(context_vessels)} potentially relevant vessels noted for statutory review)."
+            )
+            evt = IncidentEvent(
+                incident_id=incident_id,
+                event_type="SOURCE_ANALYSIS_EVALUATED",
+                description=evt_desc,
+                created_by="Source Analyzer Engine",
+            )
+            db.add(evt)
+            db.commit()
+            db.refresh(analysis)
+        else:
+            candidate_a.evidence = [ev1, ev2, *vessel_evidences]
+            candidate_b.evidence = []
+            candidate_c.evidence = [ev4] if ev4 else []
+            analysis.candidates = [candidate_a, candidate_b, candidate_c]
+            all_evidence = [ev1, ev2, *vessel_evidences]
+            if ev4:
+                all_evidence.append(ev4)
+            analysis.evidence_items = all_evidence
 
         return self._build_response(analysis, incident)
 
     def get_source_analysis(self, db: Session, incident_id: str) -> SourceAnalysisResponse:
-        """Fetches existing source analysis dossier or runs evaluation on-demand."""
+        """Fetches existing source analysis dossier or runs evaluation on-demand without persistence."""
         analysis = (
             db.query(SourceAnalysis)
             .filter(SourceAnalysis.incident_id == incident_id)
@@ -372,7 +430,7 @@ class SourceAnalyzerService:
             .first()
         )
         if not analysis:
-            return self.evaluate_source_analysis(db, incident_id)
+            return self.evaluate_source_analysis(db, incident_id, persist=False)
         
         incident = db.query(Incident).filter(Incident.id == incident_id).first()
         if not incident:
@@ -488,7 +546,7 @@ class SourceAnalyzerService:
                     evidence_data_json=ev.evidence_data_json,
                     created_at=ev.created_at.isoformat() if ev.created_at else datetime.now(timezone.utc).isoformat(),
                 )
-                for ev in cand.evidence
+                for ev in (getattr(cand, "evidence", None) or [])
             ]
 
             candidate_schemas.append(

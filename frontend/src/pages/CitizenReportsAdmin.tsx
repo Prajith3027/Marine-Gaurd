@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import apiService from "../services/api";
 import type { CitizenReportItem } from "../types";
+import { AuthImage, openAuthMedia } from "../components/ui/AuthMedia";
 
 export default function CitizenReportsAdmin() {
   const [reports, setReports] = useState<CitizenReportItem[]>([]);
@@ -317,7 +318,7 @@ export default function CitizenReportsAdmin() {
                   {/* Photo Thumbnail */}
                   <td className="px-3.5 py-2.5">
                     {rep.photo_url ? (
-                      <img
+                      <AuthImage
                         src={rep.photo_url}
                         alt="Evidence"
                         onClick={() => handleOpenReview(rep)}
@@ -427,20 +428,19 @@ export default function CitizenReportsAdmin() {
               <div className="bg-[#F8FBFE] p-2 rounded-xl border border-[#D9E8F2] flex items-center justify-center">
                 {selectedReport.photo_url ? (
                   <div className="relative group w-full">
-                    <img
+                    <AuthImage
                       src={selectedReport.photo_url}
                       alt="Full Evidence"
                       className="w-full h-48 sm:h-56 object-cover rounded-lg"
                     />
-                    <a
-                      href={selectedReport.photo_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="absolute bottom-2 right-2 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[10px] text-[#4DB8E8] flex items-center gap-1 hover:text-white"
+                    <button
+                      type="button"
+                      onClick={() => openAuthMedia(selectedReport.photo_url!)}
+                      className="absolute bottom-2 right-2 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[10px] text-[#4DB8E8] flex items-center gap-1 hover:text-white cursor-pointer"
                     >
                       <ExternalLink className="w-3 h-3" />
                       <span>Full Res</span>
-                    </a>
+                    </button>
                   </div>
                 ) : (
                   <div className="h-48 flex flex-col items-center justify-center text-[#8A9AA8] space-y-1">

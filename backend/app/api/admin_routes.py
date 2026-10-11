@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -81,7 +83,7 @@ def _incident_brief(i: Incident) -> dict:
 def _hindcast(db: Session, incident: Incident) -> Optional[dict]:
     try:
         return SourceAnalyzerService().evaluate_source_analysis(
-            db, incident.id, force_recalculate=False
+            db, incident.id, force_recalculate=False, persist=False
         ).model_dump()
     except Exception:  # hindcast is optional context for ranking
         return None
@@ -185,6 +187,39 @@ def _report_or_404(db: Session, report_id: str) -> tuple[CitizenReport, Optional
 def get_report(report_id: str, db: Session = Depends(get_db)):
     r, uname = _report_or_404(db, report_id)
     return admin_report_view(db, r, uname)
+
+
+UPLOAD_DIR = Path("uploads/reports")
+
+
+def _stream_report_media_admin(filename: Optional[str], default_media_type: str = "image/jpeg") -> FileResponse:
+    if not filename:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No media attached to this report")
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid file path")
+    safe_name = Path(filename).name
+    upload_dir = UPLOAD_DIR.resolve()
+    target_path = (upload_dir / safe_name).resolve()
+    if upload_dir not in target_path.parents and target_path != upload_dir:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid file path")
+    if not target_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media file not found")
+    return FileResponse(target_path, media_type=default_media_type)
+
+
+@router.get("/reports/{report_id}/photo", summary="Admin: Get photo evidence for citizen report")
+def get_admin_report_photo(report_id: str, db: Session = Depends(get_db)):
+    r, _ = _report_or_404(db, report_id)
+    filename = r.photo_filename or (Path(r.photo_url).name if r.photo_url else None)
+    ctype = r.photo_content_type or "image/jpeg"
+    return _stream_report_media_admin(filename, ctype)
+
+
+@router.get("/reports/{report_id}/video", summary="Admin: Get video evidence for citizen report")
+def get_admin_report_video(report_id: str, db: Session = Depends(get_db)):
+    r, _ = _report_or_404(db, report_id)
+    filename = Path(r.video_url).name if r.video_url else None
+    return _stream_report_media_admin(filename, "video/mp4")
 
 
 class ReportAction(BaseModel):
@@ -397,7 +432,9 @@ def update_investigation(inv_id: str, payload: InvestigationUpdate, db: Session 
 def hindcast(incident_id: Optional[str] = None, db: Session = Depends(get_db)):
     inc = _get_incident(db, incident_id)
     try:
-        sa = SourceAnalyzerService().evaluate_source_analysis(db, inc.id, force_recalculate=False)
+        sa = SourceAnalyzerService().evaluate_source_analysis(
+            db, inc.id, force_recalculate=False, persist=False
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
     data = sa.model_dump()

@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -129,6 +131,51 @@ def get_my_report(report_id: str, db: Session = Depends(get_db), user: User = De
     if r is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
     return citizen_report_view(db, r)
+
+
+UPLOAD_DIR = Path("uploads/reports")
+
+
+def _stream_report_file(filename: Optional[str], default_media_type: str = "image/jpeg") -> FileResponse:
+    if not filename:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No media attached to this report")
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid file path")
+    safe_name = Path(filename).name
+    upload_dir = UPLOAD_DIR.resolve()
+    target_path = (upload_dir / safe_name).resolve()
+    if upload_dir not in target_path.parents and target_path != upload_dir:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid file path")
+    if not target_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media file not found")
+    return FileResponse(target_path, media_type=default_media_type)
+
+
+@router.get("/reports/{report_id}/photo", summary="Get private photo for owned report")
+def get_my_report_photo(report_id: str, db: Session = Depends(get_db), user: User = Depends(require_citizen)):
+    try:
+        uuid.UUID(report_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    r = db.execute(_own_reports(db, user).where(CitizenReport.id == report_id)).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    filename = r.photo_filename or (Path(r.photo_url).name if r.photo_url else None)
+    ctype = r.photo_content_type or "image/jpeg"
+    return _stream_report_file(filename, ctype)
+
+
+@router.get("/reports/{report_id}/video", summary="Get private video for owned report")
+def get_my_report_video(report_id: str, db: Session = Depends(get_db), user: User = Depends(require_citizen)):
+    try:
+        uuid.UUID(report_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    r = db.execute(_own_reports(db, user).where(CitizenReport.id == report_id)).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    filename = Path(r.video_url).name if r.video_url else None
+    return _stream_report_file(filename, "video/mp4")
 
 
 @router.get("/summary", summary="Citizen dashboard counters")

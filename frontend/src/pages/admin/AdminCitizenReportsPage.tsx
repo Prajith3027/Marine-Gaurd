@@ -17,6 +17,7 @@ import {
 import { adminApi } from "../../services/adminApi";
 import type { AdminCitizenReport } from "../../types/auth";
 import { MarineLoader } from "../../components/ui/MarineLoader";
+import { AuthImage, AuthVideo, openAuthMedia } from "../../components/ui/AuthMedia";
 
 export default function AdminCitizenReportsPage() {
   const [reports, setReports] = useState<AdminCitizenReport[]>([]);
@@ -400,17 +401,16 @@ export default function AdminCitizenReportsPage() {
                   <div className="border border-slate-200 dark:border-[#1c3e5e] rounded-xl overflow-hidden bg-black/5 flex flex-col">
                     <div className="p-2 bg-slate-100 dark:bg-[#10273d] text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between">
                       <span>Field Photo</span>
-                      <a
-                        href={selectedReport.photo_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#1268B3] flex items-center gap-1 hover:underline"
+                      <button
+                        type="button"
+                        onClick={() => openAuthMedia(selectedReport.photo_url!)}
+                        className="text-[#1268B3] flex items-center gap-1 hover:underline cursor-pointer"
                       >
                         <ExternalLink className="w-3 h-3" />
                         <span>Open Original</span>
-                      </a>
+                      </button>
                     </div>
-                    <img
+                    <AuthImage
                       src={selectedReport.photo_url}
                       alt="Field evidence"
                       className="w-full h-48 object-cover"
@@ -426,18 +426,16 @@ export default function AdminCitizenReportsPage() {
                   <div className="border border-slate-200 dark:border-[#1c3e5e] rounded-xl overflow-hidden bg-black/5 flex flex-col">
                     <div className="p-2 bg-slate-100 dark:bg-[#10273d] text-[10px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between">
                       <span>Video Recording</span>
-                      <a
-                        href={selectedReport.video_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#1268B3] flex items-center gap-1 hover:underline"
+                      <button
+                        type="button"
+                        onClick={() => openAuthMedia(selectedReport.video_url!)}
+                        className="text-[#1268B3] flex items-center gap-1 hover:underline cursor-pointer"
                       >
                         <ExternalLink className="w-3 h-3" />
                         <span>Direct Link</span>
-                      </a>
+                      </button>
                     </div>
-                    <video
-                      controls
+                    <AuthVideo
                       src={selectedReport.video_url}
                       className="w-full h-48 bg-black object-contain"
                     />

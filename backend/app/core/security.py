@@ -11,9 +11,8 @@ from typing import Any
 import bcrypt
 import jwt
 
-from app.core.config import get_settings
+from app.core.config import get_settings, INSECURE_SECRET_PATTERNS, MIN_JWT_SECRET_BYTES
 
-_DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION"
 MAX_PASSWORD_BYTES = 72  # bcrypt hard limit
 MIN_PASSWORD_LENGTH = 8
 
@@ -24,8 +23,28 @@ class TokenError(Exception):
 
 def _secret() -> str:
     s = get_settings()
-    if s.app_env.lower() not in ("development", "dev", "test", "testing") and s.secret_key == _DEFAULT_SECRET:
-        raise RuntimeError("SECRET_KEY must be set to a strong value outside development.")
+    env_lower = (s.app_env or "").strip().lower()
+    is_production = env_lower not in ("development", "dev", "test", "testing")
+    sec = (s.secret_key or "").strip()
+    if is_production:
+        if not sec:
+            raise RuntimeError(
+                "SECRET_KEY is missing or empty. A secure secret of at least 32 bytes (256 bits) "
+                "must be configured via environment in production."
+            )
+        if sec.lower() in INSECURE_SECRET_PATTERNS:
+            raise RuntimeError(
+                "Insecure default SECRET_KEY detected. Production must use a cryptographically strong "
+                "random secret configured via environment."
+            )
+        if len(sec.encode("utf-8")) < MIN_JWT_SECRET_BYTES:
+            raise RuntimeError(
+                f"SECRET_KEY must be at least {MIN_JWT_SECRET_BYTES} bytes (256 bits) in production, "
+                f"got {len(sec.encode('utf-8'))} bytes."
+            )
+    else:
+        if not sec:
+            raise RuntimeError("SECRET_KEY must not be empty.")
     return s.secret_key
 
 
